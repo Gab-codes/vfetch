@@ -1,12 +1,13 @@
 {
-  "name": "v-fetch",
-  "version": "0.0.1",
-  "description": "",
+  "name": "vfetch",
+  "version": "0.1.0",
+  "description": "Vfetch is a lightweight HTTP client for Web, Mobile and Desktop apps.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsup"
+    "build": "tsup",
+    "dev": "tsup src/index.ts --watch"
   },
   "keywords": [
     "fetch",
