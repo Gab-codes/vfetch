@@ -1,11 +1,14 @@
 import { normalizeError } from "./errors";
+import { Interceptor } from "./interceptors";
 import { RequestOptions, VfetchConfig, VfetchResponse } from "./types";
 
 export class VfetchClient {
   private config: VfetchConfig;
+  private interceptor: Interceptor;
 
   constructor(config: VfetchConfig) {
     this.config = config;
+    this.interceptor = new Interceptor();
   }
 
   private async request<T>(
@@ -31,21 +34,31 @@ export class VfetchClient {
         ...options.headers,
       });
 
-      if (this.config.getToken) {
-        const token = await this.config.getToken();
-        if (token) {
-          headers.set("Authorization", `Bearer ${token}`);
-        }
-      }
+      await this.interceptor.beforeRequest(headers, this.config);
 
-      const response = await fetch(url.toString(), {
+      const fetchOptions: RequestInit = {
         method: options.method,
         headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
-      });
+      };
+
+      const retryFn = async (newToken?: string) => {
+        if (newToken) {
+          headers.set("Authorization", `Bearer ${newToken}`);
+        }
+        return fetch(url.toString(), { ...fetchOptions, headers });
+      };
+
+      let response = await fetch(url.toString(), fetchOptions);
+
+      response = await this.interceptor.afterResponse(
+        response,
+        this.config,
+        retryFn,
+      );
 
       if (!response.ok) {
-        return normalizeError(response);
+        return await normalizeError(response);
       }
 
       const data = await response.json();
@@ -55,7 +68,7 @@ export class VfetchClient {
         ok: true,
       };
     } catch (error) {
-      return normalizeError(error);
+      return await normalizeError(error);
     }
   }
 
@@ -73,6 +86,7 @@ export class VfetchClient {
   ): Promise<VfetchResponse<T>> {
     return this.request<T>(path, { ...options, method: "POST", body });
   }
+
   async patch<T>(
     path: string,
     body?: Record<string, unknown> | unknown[],
