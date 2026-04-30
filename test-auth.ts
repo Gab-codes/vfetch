@@ -5,13 +5,13 @@ import { createClient } from "./src/index";
 const originalFetch = global.fetch;
 
 function setupMockFetch() {
-  let token = "initial-token";
+  let validTokens = new Set<string>(["initial-token"]); // Track valid tokens
   let refreshCount = 0;
 
   global.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input.toString();
 
-    // Properly extract Authorization header from Headers object
+    // Properly extract Authorization header
     let authHeader = "";
     if (init?.headers instanceof Headers) {
       authHeader = init.headers.get("Authorization") || "";
@@ -19,6 +19,9 @@ function setupMockFetch() {
       authHeader =
         (init.headers as Record<string, string>)["Authorization"] || "";
     }
+
+    // Extract token from "Bearer <token>"
+    const token = authHeader.replace("Bearer ", "");
 
     console.log(`📡 Request to: ${url}`);
     console.log(`🔑 Auth header: ${authHeader || "none"}`);
@@ -29,11 +32,12 @@ function setupMockFetch() {
       console.log(`🔄 Refresh called (${refreshCount} times)`);
 
       if (refreshCount === 1) {
-        // First refresh succeeds
-        token = "new-token";
-        return Response.json({ token: "new-token" });
+        // First refresh succeeds - issue a valid token
+        const newToken = "new-token";
+        validTokens.add(newToken);
+        return Response.json({ token: newToken });
       } else {
-        // Second refresh fails - should trigger onAuthFailure
+        // Second refresh fails
         return Response.json(
           { error: "Invalid refresh token" },
           { status: 401 },
@@ -43,17 +47,17 @@ function setupMockFetch() {
 
     // Mock protected endpoint
     if (url.includes("/protected")) {
-      // Use authHeader variable instead of headers.Authorization
-      if (!authHeader || authHeader === "Bearer expired-token") {
+      // Validate token properly - check if it's in validTokens set
+      if (!token || !validTokens.has(token)) {
+        console.log(`❌ Invalid/expired token: ${token}`);
         return Response.json({ error: "Unauthorized" }, { status: 401 });
       }
 
-      if (authHeader === `Bearer ${token}`) {
-        return Response.json(
-          { data: "Success!", tokenUsed: token },
-          { status: 200 },
-        );
-      }
+      console.log(`✅ Valid token: ${token}`);
+      return Response.json(
+        { data: "Success!", tokenUsed: token },
+        { status: 200 },
+      );
     }
 
     // Default response
@@ -103,7 +107,6 @@ async function testFailedRefresh() {
     "\n=== Test 2: Failed refresh (should trigger auth failure) ===\n",
   );
 
-  // Reset refresh count for this test
   let currentToken = "expired-token";
   let authFailureCalled = false;
   let testRefreshCount = 0;
@@ -141,12 +144,50 @@ async function testFailedRefresh() {
   console.assert((authFailureCalled = true), "✅ Auth failure was triggered");
 }
 
+async function testInfiniteRefreshProtection() {
+  console.log("\n=== Test 3: Infinite refresh protection ===\n");
+
+  let currentToken = "expired-token";
+  let refreshCount = 0;
+  let authFailureCalled = false;
+
+  const api = createClient({
+    baseURL: "http://test.com",
+    getToken: () => currentToken,
+    onRefresh: async () => {
+      refreshCount++;
+      console.log(`🔄 Refresh attempt ${refreshCount}...`);
+      currentToken = "still-invalid-token";
+      return currentToken;
+    },
+    onAuthFailure: () => {
+      console.log("❌ Auth failure called - prevented infinite loop!");
+      authFailureCalled = true;
+    },
+  });
+
+  const result = await api.get("/protected");
+  console.log("Result:", result);
+  console.log(`Refresh attempts: ${refreshCount}`);
+  console.log(`Auth failure called: ${authFailureCalled}`);
+
+  // The request should fail because the new token is still invalid
+  console.assert(result.ok === false, "✅ Request failed (expected)");
+  console.assert(result.status === 401, "✅ Got 401 status");
+  console.assert(
+    refreshCount === 1,
+    "✅ Only one refresh attempt (protection worked)",
+  );
+  console.assert((authFailureCalled = true), "✅ Auth failure triggered");
+}
+
 // Run tests
 async function runTests() {
   setupMockFetch();
 
   await testSuccessfulRefresh();
   await testFailedRefresh();
+  await testInfiniteRefreshProtection();
 
   // Restore original fetch
   global.fetch = originalFetch;
