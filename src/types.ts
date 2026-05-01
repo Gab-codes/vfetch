@@ -44,6 +44,11 @@ export interface VfetchConfig {
   /** Delay in milliseconds between retry attempts. Default is 0. */
   readonly retryDelay?: number;
   /**
+   * The request credentials to be sent with the request.
+   * Default is "same-origin".
+   */
+  readonly credentials?: RequestCredentials;
+  /**
    * Function to retrieve the authentication token.
    * Can be synchronous or asynchronous.
    */
@@ -97,4 +102,6 @@ export interface RequestOptions {
   readonly retry?: number;
   /** Request-specific retry delay. Overrides global retryDelay. */
   readonly retryDelay?: number;
+  /** Request-specific credentials. Overrides global credentials. */
+  readonly credentials?: RequestCredentials;
 }

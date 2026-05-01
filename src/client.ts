@@ -111,12 +111,14 @@ export class VfetchClient {
       }
 
       const finalSignal = this.resolveSignal(userSignal, timeoutController);
+      const credentials = options.credentials ?? this.config.credentials ?? "same-origin";
 
       const fetchOptions: RequestInit = {
         method,
         headers,
         body: body != null ? JSON.stringify(body) : undefined,
         signal: finalSignal,
+        credentials,
       };
 
       const urlString = url.toString();
