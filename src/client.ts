@@ -150,7 +150,18 @@ export class VfetchClient {
           return errorResponse;
         }
 
-        const data = await response.json() as T;
+        let data: T;
+        try {
+          data = await response.json() as T;
+        } catch {
+          const parseError: VfetchError = {
+            ok: false,
+            error: `Failed to parse JSON response from ${method} ${path}`,
+            status: response.status,
+          };
+          this.safeInvokeHook(() => this.config.onError?.(urlString, parseError));
+          return parseError;
+        }
 
         // Lifecycle Hook: onResponse
         this.safeInvokeHook(() => this.config.onResponse?.(urlString, response, durationMs));
@@ -163,7 +174,7 @@ export class VfetchClient {
         // Check if error is due to AbortSignal (timeout or manual cancellation)
         if (error instanceof Error && error.name === "AbortError") {
           const isTimeout = timeoutController?.signal.aborted === true;
-          const abortError: VfetchError = {
+          const abortError: VfetchError<string> = {
             ok: false,
             error: isTimeout ? "Request timed out" : "Request was cancelled",
             status: 0,

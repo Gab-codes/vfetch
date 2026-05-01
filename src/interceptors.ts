@@ -7,8 +7,8 @@ const HTTP_UNAUTHORIZED = 401;
  * specifically authentication token attachment and automatic refresh.
  */
 export class Interceptor {
-  private refreshCount = 0;
-  private readonly maxRefreshAttempts = 1;
+  /** In-flight refresh promise, used to deduplicate concurrent 401 refreshes. */
+  private refreshPromise: Promise<string | null | undefined> | null = null;
 
   /**
    * Automatically attaches bearer tokens to request headers if a getToken helper is provided.
@@ -29,6 +29,8 @@ export class Interceptor {
 
   /**
    * Handles 401 Unauthorized responses by attempting a token refresh.
+   * Concurrent 401s are deduplicated — only one refresh call is made,
+   * and all waiting requests retry with the new token.
    */
   async afterResponse(
     response: Response,
@@ -36,51 +38,60 @@ export class Interceptor {
     retry: (newToken?: string) => Promise<Response>,
   ): Promise<Response> {
     if (response.status !== HTTP_UNAUTHORIZED) {
-      this.refreshCount = 0;
       return response;
     }
 
-    if (this.refreshCount >= this.maxRefreshAttempts) {
-      this.refreshCount = 0; // Reset for future requests
+    // No refresh handler configured — nothing we can do
+    if (!config.onRefresh) {
       if (config.onAuthFailure) {
         await config.onAuthFailure();
       }
       return response;
     }
 
-    if (config.onRefresh) {
+    // If a refresh is already in-flight, wait for it instead of starting another
+    if (this.refreshPromise) {
       try {
-        this.refreshCount++;
-        const newToken = await config.onRefresh();
-
+        const newToken = await this.refreshPromise;
         if (newToken) {
-          const retryResponse = await retry(newToken);
-
-          if (retryResponse.status === HTTP_UNAUTHORIZED) {
-            if (config.onAuthFailure) {
-              await config.onAuthFailure();
-            }
-            return retryResponse;
-          }
-
-          this.refreshCount = 0;
-          return retryResponse;
+          return retry(newToken);
         }
       } catch {
-        this.refreshCount = 0;
+        // The primary refresh already failed and called onAuthFailure
+      }
+      return response;
+    }
+
+    // Start a new refresh — store the promise so concurrent 401s can share it
+    try {
+      this.refreshPromise = config.onRefresh();
+      const newToken = await this.refreshPromise;
+
+      if (!newToken) {
         if (config.onAuthFailure) {
           await config.onAuthFailure();
         }
-
         return response;
       }
-    }
 
-    this.refreshCount = 0;
-    if (config.onAuthFailure) {
-      await config.onAuthFailure();
-    }
+      const retryResponse = await retry(newToken);
 
-    return response;
+      // If the retried request ALSO returns 401, the refreshed token is invalid
+      if (retryResponse.status === HTTP_UNAUTHORIZED) {
+        if (config.onAuthFailure) {
+          await config.onAuthFailure();
+        }
+        return retryResponse;
+      }
+
+      return retryResponse;
+    } catch {
+      if (config.onAuthFailure) {
+        await config.onAuthFailure();
+      }
+      return response;
+    } finally {
+      this.refreshPromise = null;
+    }
   }
 }

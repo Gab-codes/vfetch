@@ -13,10 +13,14 @@ export interface VfetchSuccess<T> {
 
 /**
  * Represents an error response from vfetch.
+ * @template E The type of the error payload. Defaults to `string`.
  */
 export interface VfetchError<E = string | Record<string, any>> {
+  /** Indicates the request failed. */
   readonly ok: false;
+  /** The error payload — typically a human-readable message string. */
   readonly error: E;
+  /** The HTTP status code (0 for network/timeout errors). */
   readonly status: number;
 }
 

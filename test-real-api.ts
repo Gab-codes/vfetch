@@ -1,407 +1,363 @@
-// test-real-api.ts
 import { createClient } from "./src/index";
 import type { VfetchResponse, VfetchSuccess, VfetchError } from "./src/types";
 
 // ============================================
-// Type guard helpers
+// Assertion helpers (STRICT)
 // ============================================
-function isSuccess<T>(
-  response: VfetchResponse<T>,
-): response is VfetchSuccess<T> {
-  return response.ok === true;
+
+function assert(condition: unknown, message: string): asserts condition {
+  if (!condition) throw new Error(message);
 }
 
-function isError<T>(response: VfetchResponse<T>): response is VfetchError {
-  return response.ok === false;
-}
-
-// Helper to safely access data
-function getDataOrThrow<T>(response: VfetchResponse<T>): T {
-  if (!response.ok) {
+function assertSuccess<T>(
+  res: VfetchResponse<T>,
+  message?: string,
+): asserts res is VfetchSuccess<T> {
+  if (!res.ok) {
     throw new Error(
-      `Request failed: ${response.error} (Status: ${response.status})`,
+      message ?? `Expected success but got error: ${res.error} (${res.status})`,
     );
   }
-  return response.data;
 }
 
-// Helper: Delay function for timeout tests
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+function assertError<T>(
+  res: VfetchResponse<T>,
+  message?: string,
+): asserts res is VfetchError {
+  if (res.ok) {
+    throw new Error(message ?? "Expected error but got success");
+  }
+}
 
 // ============================================
-// Test Suite against DummyJSON API
+// Utils
+// ============================================
+
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+type FetchInput = Parameters<typeof fetch>[0];
+type FetchInit = Parameters<typeof fetch>[1];
+type FetchMock = (input: FetchInput, init?: FetchInit) => Promise<Response>;
+
+async function withMockedFetch<T>(
+  mock: FetchMock,
+  run: () => Promise<T>,
+): Promise<T> {
+  const original = globalThis.fetch;
+  globalThis.fetch = mock as typeof fetch;
+
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+// ============================================
+// TEST 1: Basic Requests
 // ============================================
 
 async function testBasicRequests() {
-  console.log("\n=== Test 1: Basic GET & POST requests ===\n");
+  console.log("\n=== Test 1: Basic Requests ===");
 
   const api = createClient({
     baseURL: "https://dummyjson.com",
   });
 
-  // Test 1.1: GET request
-  console.log("1.1 GET /products/1");
-  const product = await api.get<any>("/products/1");
+  const product = await api.get<{ id: number }>("/products/1");
+  assertSuccess(product);
+  assert(product.data.id === 1, "GET failed");
 
-  if (isError(product)) {
-    console.error("GET failed:", product.error);
-    console.assert(false, "GET should succeed");
-    return;
-  }
-
-  console.assert(product.data?.id === 1, "Should return product with id 1");
-  console.log("✅ GET works");
-
-  // Test 1.2: POST request
-  console.log("\n1.2 POST /products/add");
-  const newProduct = await api.post<any>("/products/add", {
-    title: "vFetch Test Product",
-    price: 99.99,
+  const created = await api.post<{ title: string }>("/products/add", {
+    title: "Test",
   });
+  assertSuccess(created);
+  assert(created.data.title === "Test", "POST failed");
 
-  if (isError(newProduct)) {
-    console.error("POST failed:", newProduct.error);
-    console.assert(false, "POST should succeed");
-    return;
-  }
-
-  console.assert(
-    newProduct.data?.title === "vFetch Test Product",
-    "Should return created product",
-  );
-  console.log("✅ POST works");
-
-  // Test 1.3: PUT request
-  console.log("\n1.3 PUT /products/1");
-  const updatedProduct = await api.put<any>("/products/1", {
-    title: "Updated vFetch Product",
-    price: 149.99,
+  const updated = await api.put<{ title: string }>("/products/1", {
+    title: "Updated",
   });
+  assertSuccess(updated);
+  assert(updated.data.title === "Updated", "PUT failed");
 
-  if (isError(updatedProduct)) {
-    console.error("PUT failed:", updatedProduct.error);
-    console.assert(false, "PUT should succeed");
-    return;
-  }
+  const deleted = await api.delete<{ isDeleted: boolean }>("/products/1");
+  assertSuccess(deleted);
+  assert(deleted.data.isDeleted === true, "DELETE failed");
 
-  console.assert(
-    updatedProduct.data?.title === "Updated vFetch Product",
-    "Should return updated product",
-  );
-  console.log("✅ PUT works");
-
-  // Test 1.4: DELETE request
-  console.log("\n1.4 DELETE /products/1");
-  const deletedProduct = await api.delete<any>("/products/1");
-
-  if (isError(deletedProduct)) {
-    console.error("DELETE failed:", deletedProduct.error);
-    console.assert(false, "DELETE should succeed");
-    return;
-  }
-
-  console.assert(
-    deletedProduct.data?.isDeleted === true,
-    "Should mark as deleted",
-  );
-  console.log("✅ DELETE works");
-}
-
-async function testQueryParams() {
-  console.log("\n=== Test 2: Query parameters & pagination ===\n");
-
-  const api = createClient({
-    baseURL: "https://dummyjson.com",
-  });
-
-  // Test 2.1: Basic query params
-  console.log("2.1 GET /products?limit=3&skip=2");
-  const paginated = await api.get<any>("/products", {
-    params: { limit: "3", skip: "2" },
-  });
-
-  if (isError(paginated)) {
-    console.error("Query params test failed:", paginated.error);
-    console.assert(false, "Request should succeed");
-    return;
-  }
-
-  console.assert(
-    paginated.data?.products?.length <= 3,
-    "Should respect limit parameter",
-  );
-  console.log("✅ Query params work");
-
-  // Test 2.2: Multiple query params
-  console.log("\n2.2 GET /products?select=title,price");
-  const selected = await api.get<any>("/products", {
-    params: { select: "title,price", limit: "2" },
-  });
-
-  if (isError(selected)) {
-    console.error("Select test failed:", selected.error);
-    console.assert(false, "Request should succeed");
-    return;
-  }
-
-  console.assert(
-    selected.data?.products?.[0]?.title,
-    "Response should include selected fields",
-  );
-  console.log("✅ Multiple query params work");
-}
-
-async function testAuthFlow() {
-  console.log("\n=== Test 3: Authentication flow ===\n");
-
-  // First, get an auth token from DummyJSON
-  console.log("3.1 Getting auth token...");
-  const loginRes = await fetch("https://dummyjson.com/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      username: "emilys",
-      password: "emilyspass",
-      expiresInMins: 1,
-    }),
-  });
-  const loginData = await loginRes.json();
-  const accessToken = loginData.accessToken;
-  console.log(`✅ Got token: ${accessToken.substring(0, 20)}...`);
-
-  let currentToken = accessToken;
-  let refreshCalled: boolean = false; // ← Add : boolean type
-  let authFailureCalled: boolean = false; // ← Add : boolean type
-
-  const api = createClient({
-    baseURL: "https://dummyjson.com/auth",
-    getToken: () => currentToken,
-    onRefresh: async () => {
-      console.log("🔄 Refreshing token...");
-      refreshCalled = true;
-      const refreshRes = await fetch("https://dummyjson.com/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: loginData.refreshToken }),
-      });
-      const data = await refreshRes.json();
-      currentToken = data.accessToken;
-      return currentToken;
-    },
-    onAuthFailure: () => {
-      console.log("❌ Auth failure called");
-      authFailureCalled = true;
-    },
-  });
-
-  // Test with valid token
-  console.log("\n3.2 GET /me with valid token");
-  const me = await api.get<any>("/me");
-
-  if (isError(me)) {
-    console.error("Auth test failed:", me.error);
-    console.assert(false, "Request with token should succeed");
-    return;
-  }
-
-  console.assert(me.data?.id, "Should return user data");
-  console.log("✅ Auth token injection works");
-
-  // Test token refresh
-  console.log("\n3.3 Waiting 2 seconds for token expiry...");
-  await delay(2000);
-  currentToken = "expired_token";
-  console.log("3.4 Request with expired token (should auto-refresh)");
-  const meAfterExpiry = await api.get<any>("/me");
-
-  if (isError(meAfterExpiry)) {
-    console.error("Refresh test failed:", meAfterExpiry.error);
-    console.assert(false, "Request should succeed after refresh");
-    return;
-  }
-
-  // Now TypeScript knows refreshCalled is boolean
-  if (!refreshCalled) {
-    console.error("❌ Refresh was not called");
-  } else {
-    console.log("✅ Refresh was called");
-  }
-  console.log("✅ Auto token refresh works");
-}
-
-async function testErrorHandling() {
-  console.log("\n=== Test 4: Error normalization ===\n");
-
-  const api = createClient({
-    baseURL: "https://dummyjson.com",
-  });
-
-  // Test 4.1: 404 error
-  console.log("4.1 GET /nonexistent");
-  const notFound = await api.get("/nonexistent");
-
-  console.assert(notFound.ok === false, "Should return ok: false");
-  console.assert(isError(notFound), "Should be error type");
-  if (isError(notFound)) {
-    console.assert(notFound.status === 404, "Should have 404 status");
-    console.assert(!!notFound.error, "Should have error message");
-  }
-  console.log("✅ 404 errors normalized");
-
-  // Test 4.2: 401 error (no token)
-  console.log("\n4.2 GET /auth/me (no token)");
-  const unauth = await api.get("/auth/me");
-
-  console.assert(unauth.ok === false, "Should return ok: false");
-  if (isError(unauth)) {
-    console.assert(unauth.status === 401, "Should have 401 status");
-  }
-  console.log("✅ 401 errors normalized");
-}
-
-async function testRequestOptions() {
-  console.log("\n=== Test 5: Custom headers & options ===\n");
-
-  const api = createClient({
-    baseURL: "https://dummyjson.com",
-  });
-
-  // Test 5.1: Custom headers
-  console.log("5.1 GET with custom headers");
-  const customHeader = await api.get("/products/1", {
-    headers: {
-      "X-Custom-Header": "test-value",
-      "X-Request-ID": "12345",
-    },
-  });
-
-  if (isError(customHeader)) {
-    console.error("Custom headers test failed:", customHeader.error);
-    console.assert(false, "Request with custom headers should succeed");
-    return;
-  }
-
-  console.log("✅ Custom headers work");
-
-  // Test 5.2: Different content types
-  console.log("\n5.2 POST with custom content type");
-  const customContent = await api.post(
-    "/products/add",
-    { title: "Test" },
-    {
-      headers: {
-        "X-Custom": "value",
-      },
-    },
-  );
-
-  if (isError(customContent)) {
-    console.error("POST with headers failed:", customContent.error);
-    console.assert(false, "POST with custom headers should succeed");
-    return;
-  }
-
-  console.log("✅ Request options work");
-}
-
-async function testNetworkTimeout() {
-  console.log("\n=== Test 6: Timeout handling ===\n");
-
-  console.log("6.1 Testing with delay parameter");
-  const apiSlow = createClient({
-    baseURL: "https://dummyjson.com",
-  });
-
-  // Use delay param (max 5000ms as per docs)
-  const start = Date.now();
-  const delayed = await apiSlow.get("/products/1?delay=2000");
-  const duration = Date.now() - start;
-
-  if (isError(delayed)) {
-    console.error("Delay test failed:", delayed.error);
-    console.assert(false, "Request should eventually succeed");
-    return;
-  }
-
-  console.assert(
-    duration >= 1900 && duration <= 2500,
-    `Request took ~${duration}ms which includes delay`,
-  );
-  console.log(`✅ Delay works (took ${duration}ms)`);
-}
-
-async function testConcurrentRequests() {
-  console.log("\n=== Test 7: Concurrent requests ===\n");
-
-  const api = createClient({
-    baseURL: "https://dummyjson.com",
-  });
-
-  console.log("7.1 Making 5 concurrent requests");
-  const requests = [
-    api.get("/products/1"),
-    api.get("/products/2"),
-    api.get("/products/3"),
-    api.get("/products/4"),
-    api.get("/products/5"),
-  ];
-
-  const results = await Promise.all(requests);
-  const allSucceeded = results.every((r) => r.ok === true);
-  console.assert(
-    allSucceeded === true,
-    "All concurrent requests should succeed",
-  );
-  console.log("✅ Concurrent requests work");
-}
-
-async function testIPAddress() {
-  console.log("\n=== Test 8: IP detection ===\n");
-
-  const api = createClient({
-    baseURL: "https://dummyjson.com",
-  });
-
-  console.log("8.1 GET /ip");
-  const ipInfo = await api.get<any>("/ip");
-
-  if (isError(ipInfo)) {
-    console.error("IP test failed:", ipInfo.error);
-    console.assert(false, "IP request should succeed");
-    return;
-  }
-
-  console.assert(ipInfo.data?.ip, "Should return IP address");
-  console.log(`✅ IP detection works: ${ipInfo.data?.ip}`);
+  console.log("✅ Basic requests OK");
 }
 
 // ============================================
-// Run all tests
+// TEST 2: Query Params
+// ============================================
+
+async function testQueryParams() {
+  console.log("\n=== Test 2: Query Params ===");
+
+  const api = createClient({
+    baseURL: "https://dummyjson.com",
+  });
+
+  const res = await api.get<{ products: unknown[] }>("/products", {
+    params: { limit: "2", skip: "1" },
+  });
+
+  assertSuccess(res);
+  assert(res.data.products.length <= 2, "Query params failed");
+
+  console.log("✅ Query params OK");
+}
+
+// ============================================
+// TEST 3: Header + Token Injection
+// ============================================
+
+async function testHeaderMerging() {
+  console.log("\n=== Test 3: Header merging ===");
+
+  let capturedAuth: string | null = null;
+
+  await withMockedFetch(
+    async (_, init) => {
+      const headers =
+        init?.headers instanceof Headers
+          ? init.headers
+          : new Headers(init?.headers);
+
+      capturedAuth = headers.get("Authorization");
+
+      return jsonResponse({ ok: true });
+    },
+    async () => {
+      const api = createClient({
+        baseURL: "https://x.com",
+        getToken: () => "abc123",
+      });
+
+      const res = await api.get("/test", {
+        headers: { "X-Test": "1" },
+      });
+
+      assertSuccess(res);
+    },
+  );
+
+  assert(capturedAuth === "Bearer abc123", "Auth header not merged correctly");
+
+  console.log("✅ Header merge OK");
+}
+
+// ============================================
+// TEST 4: Error Normalization
+// ============================================
+
+async function testErrorHandling() {
+  console.log("\n=== Test 4: Error handling ===");
+
+  const api = createClient({
+    baseURL: "https://dummyjson.com",
+  });
+
+  const res = await api.get("/nonexistent");
+
+  assertError(res);
+  assert(res.status === 404, "Expected 404");
+
+  console.log("✅ Error normalization OK");
+}
+
+// ============================================
+// TEST 5: Refresh Flow (REAL EDGE)
+// ============================================
+
+async function testRefreshFlow() {
+  console.log("\n=== Test 5: Refresh flow ===");
+
+  let token = "expired";
+  let refreshCalls = 0;
+
+  await withMockedFetch(
+    async (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.endsWith("/refresh")) {
+        refreshCalls++;
+        token = "fresh";
+        return jsonResponse({ accessToken: token });
+      }
+
+      if (url.endsWith("/me")) {
+        const headers =
+          init?.headers instanceof Headers
+            ? init.headers
+            : new Headers(init?.headers);
+
+        const auth = headers.get("Authorization");
+
+        if (auth === "Bearer fresh") {
+          return jsonResponse({ id: 1 });
+        }
+
+        return jsonResponse({ message: "Unauthorized" }, 401);
+      }
+
+      return jsonResponse({}, 404);
+    },
+    async () => {
+      const api = createClient({
+        baseURL: "https://api.test",
+        getToken: () => token,
+        onRefresh: async () => {
+          const res = await fetch("https://api.test/refresh");
+          const data = (await res.json()) as { accessToken?: string };
+          token = data.accessToken ?? "";
+          return token;
+        },
+        onAuthFailure: () => {
+          throw new Error("Auth failure triggered");
+        },
+      });
+
+      const res = await api.get<{ id: number }>("/me");
+
+      assertSuccess(res);
+      assert(res.data.id === 1, "Retry after refresh failed");
+      assert(refreshCalls === 1, "Refresh should be called once");
+    },
+  );
+
+  console.log("✅ Refresh flow OK");
+}
+
+// ============================================
+// TEST 6: Concurrent Refresh Deduping
+// ============================================
+
+async function testConcurrentRefresh() {
+  console.log("\n=== Test 6: Concurrent refresh ===");
+
+  let token = "expired";
+  let refreshCalls = 0;
+
+  await withMockedFetch(
+    async (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+
+      if (url.endsWith("/refresh")) {
+        refreshCalls++;
+        await delay(50);
+        token = "fresh";
+        return jsonResponse({ accessToken: token });
+      }
+
+      if (url.endsWith("/me")) {
+        const headers =
+          init?.headers instanceof Headers
+            ? init.headers
+            : new Headers(init?.headers);
+
+        const auth = headers.get("Authorization");
+
+        if (auth === "Bearer fresh") {
+          return jsonResponse({ id: 1 });
+        }
+
+        return jsonResponse({}, 401);
+      }
+
+      return jsonResponse({}, 404);
+    },
+    async () => {
+      const api = createClient({
+        baseURL: "https://api.test",
+        getToken: () => token,
+        onRefresh: async () => {
+          const res = await fetch("https://api.test/refresh");
+          const data = (await res.json()) as { accessToken?: string };
+          token = data.accessToken ?? "";
+          return token;
+        },
+      });
+
+      const results = await Promise.all([
+        api.get("/me"),
+        api.get("/me"),
+        api.get("/me"),
+      ]);
+
+      assert(
+        results.every((r) => r.ok),
+        "All should succeed",
+      );
+      assert(refreshCalls === 1, "Refresh must be deduped");
+    },
+  );
+
+  console.log("✅ Concurrent refresh OK");
+}
+
+// ============================================
+// TEST 7: Invalid JSON
+// ============================================
+
+async function testInvalidJSON() {
+  console.log("\n=== Test 7: Invalid JSON ===");
+
+  await withMockedFetch(
+    async () => {
+      return new Response("invalid-json", { status: 200 });
+    },
+    async () => {
+      const api = createClient({
+        baseURL: "https://x.com",
+      });
+
+      const res = await api.get("/test");
+
+      assertError(res, "Should fail on invalid JSON");
+    },
+  );
+
+  console.log("✅ Invalid JSON handled");
+}
+
+// ============================================
+// RUNNER
 // ============================================
 
 async function runAllTests() {
-  console.log("🚀 Starting vfetch Real API Tests against DummyJSON\n");
-  console.log("=".repeat(60));
+  console.log("🚀 Running vFetch test suite\n");
 
-  try {
-    await testBasicRequests();
-    await testQueryParams();
-    await testAuthFlow();
-    await testErrorHandling();
-    await testRequestOptions();
-    await testNetworkTimeout();
-    await testConcurrentRequests();
-    await testIPAddress();
+  await testBasicRequests();
+  await testQueryParams();
+  await testHeaderMerging();
+  await testErrorHandling();
+  await testRefreshFlow();
+  await testConcurrentRefresh();
+  await testInvalidJSON();
 
-    console.log("\n" + "=".repeat(60));
-    console.log(
-      "\n✅ ALL TESTS PASSED! vfetch is battle-ready for open source 🚀",
-    );
-  } catch (error) {
-    console.error("\n❌ Test failed:", error);
-    process.exit(1);
-  }
+  console.log("\n✅ ALL TESTS PASSED — client is solid");
 }
 
-// Run the test suite
-runAllTests();
+runAllTests().catch((err) => {
+  console.error("\n❌ TEST FAILED:", err);
+  process.exit(1);
+});
