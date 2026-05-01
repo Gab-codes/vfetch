@@ -152,7 +152,12 @@ export class VfetchClient {
 
         let data: T;
         try {
-          data = await response.json() as T;
+          if (response.status === 204) {
+            data = {} as T;
+          } else {
+            const text = await response.text();
+            data = text ? JSON.parse(text) : ({} as T);
+          }
         } catch {
           const parseError: VfetchError = {
             ok: false,
