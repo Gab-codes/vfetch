@@ -65,4 +65,36 @@ describe('Headers Handling', () => {
       expect(headers.get('Authorization')).toBe('Bearer my-secret-token');
     }
   });
+
+  it('should not inject authorization header if getToken returns undefined', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+
+    const client = createClient({
+      baseURL: 'https://api.test.com',
+      getToken: () => undefined
+    });
+
+    await client.get('/test');
+
+    const callArgs = fetchMock.mock.calls[0];
+    const options = callArgs[1] as RequestInit;
+    const headers = new Headers(options.headers as HeadersInit);
+    expect(headers.has('Authorization')).toBe(false);
+  });
+
+  it('should not inject authorization header if getToken returns empty string', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true }));
+
+    const client = createClient({
+      baseURL: 'https://api.test.com',
+      getToken: () => ''
+    });
+
+    await client.get('/test');
+
+    const callArgs = fetchMock.mock.calls[0];
+    const options = callArgs[1] as RequestInit;
+    const headers = new Headers(options.headers as HeadersInit);
+    expect(headers.has('Authorization')).toBe(false);
+  });
 });

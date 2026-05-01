@@ -24,6 +24,15 @@ describe('Basic Requests', () => {
     }
   }, 15000);
 
+  it('should perform PATCH request', async () => {
+    const res = await client.patch<{ id: number; title: string }>('/products/1', { title: 'Patched Product' });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.id).toBe(1);
+      expect(res.data.title).toBe('Patched Product');
+    }
+  }, 15000);
+
   it('should perform PUT request', async () => {
     const res = await client.put<{ id: number; title: string }>('/products/1', { title: 'Updated Product' });
     expect(res.ok).toBe(true);
