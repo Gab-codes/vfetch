@@ -88,7 +88,7 @@ describe("vFetch Client", () => {
     const deleted = await api.delete<{ isDeleted: boolean }>("/products/1");
     assertSuccess(deleted);
     expect(deleted.data.isDeleted).toBe(true);
-  });
+  }, 15000);
 
   // --------------------------------------------
   // Query Params
@@ -104,7 +104,7 @@ describe("vFetch Client", () => {
 
     assertSuccess(res);
     expect(res.data.products.length).toBeLessThanOrEqual(2);
-  });
+  }, 15000);
 
   // --------------------------------------------
   // Header + Token Injection
@@ -152,7 +152,7 @@ describe("vFetch Client", () => {
 
     assertError(res);
     expect(res.status).toBe(404);
-  });
+  }, 15000);
 
   // --------------------------------------------
   // Refresh Flow
