@@ -1,20 +1,16 @@
 {
-  "name": "vfetch",
+  "name": "vfetch-client",
   "version": "0.1.0",
-  "description": "Vfetch is a lightweight HTTP client for Web, Mobile and Desktop apps.",
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "description": "A modern Axios alternative built on native fetch with interceptors, automatic token refresh, retries, and predictable response handling",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/index.d.mts",
-        "default": "./dist/index.mjs"
-      },
-      "require": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      }
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "files": [
@@ -30,12 +26,24 @@
   },
   "keywords": [
     "fetch",
-    "http",
-    "axios",
-    "request"
+    "http-client",
+    "axios-alternative",
+    "typescript",
+    "api-client",
+    "interceptors",
+    "react-query",
+    "node-fetch"
   ],
   "author": "gab-codes",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gab-codes/vfetch.git"
+  },
+  "homepage": "https://github.com/Gab-codes/vfetch#readme",
+  "bugs": {
+    "url": "https://github.com/Gab-codes/vfetch/issues"
+  },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^4.1.5",

@@ -7,12 +7,11 @@
 </p>
 
 <p align="center">
-  <!-- Replace these with your actual links -->
-  <img src="https://img.shields.io/npm/v/vfetch" />
-  <img src="https://img.shields.io/npm/dm/vfetch" />
-  <img src="https://img.shields.io/github/actions/workflow/status/YOUR_GITHUB_USERNAME/vfetch/test.yml" />
-  <img src="https://img.shields.io/badge/coverage-87%25-brightgreen" />
-  <img src="https://img.shields.io/npm/l/vfetch" />
+  <img src="https://img.shields.io/npm/v/vfetch-client" />
+  <img src="https://img.shields.io/npm/dm/vfetch-client" />
+  <img src="https://img.shields.io/github/actions/workflow/status/Gab-Codes/vfetch/test.yml" />
+  <img src="https://img.shields.io/badge/coverage-90%25-brightgreen" />
+  <img src="https://img.shields.io/npm/l/vfetch-client" />
 </p>
 
 ---
@@ -36,10 +35,10 @@ Most HTTP clients fall into two extremes:
 ## 📦 Installation
 
 ```bash
-npm install vfetch
-yarn add vfetch
-pnpm add vfetch
-bun add vfetch
+npm install vfetch-client
+yarn add vfetch-client
+pnpm add vfetch-client
+bun add vfetch-client
 ```
 
 ---
@@ -47,7 +46,7 @@ bun add vfetch
 ## 🚀 Quick Start
 
 ```ts
-import { createClient } from "vfetch";
+import { createClient } from "vfetch-client";
 
 const api = createClient({
   baseURL: "https://api.example.com",
@@ -174,6 +173,7 @@ For cross-origin requests using `credentials: "include"`, your backend must be e
 You **cannot** use `Access-Control-Allow-Origin: *`.
 
 Example backend CORS headers:
+
 ```http
 Access-Control-Allow-Credentials: true
 Access-Control-Allow-Origin: https://your-frontend.com
