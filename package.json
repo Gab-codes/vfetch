@@ -1,6 +1,6 @@
 {
   "name": "vfetch-client",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A modern Axios alternative built on native fetch with interceptors, automatic token refresh, retries, and predictable response handling",
   "type": "module",
   "main": "./dist/index.cjs",
