@@ -160,7 +160,3 @@ Keep that in mind when contributing.
 ---
 
 ## Thanks for contributing.
-
-```
-
-```
