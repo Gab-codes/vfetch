@@ -69,7 +69,7 @@ export class VfetchClient {
   /**
    * Internal request handler that implements the full request lifecycle.
    */
-  private async request<T>(
+  private async request<T = any>(
     path: string,
     options: RequestOptions & {
       method: string;
@@ -278,7 +278,7 @@ export class VfetchClient {
    * @param path - The URL path relative to baseURL
    * @param options - Optional request configuration
    */
-  async get<T>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
+  async get<T = any>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
     return this.request<T>(path, { ...options, method: "GET" });
   }
 
@@ -289,7 +289,7 @@ export class VfetchClient {
    * @param body - The request body, serialized as JSON
    * @param options - Optional request configuration
    */
-  async post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
+  async post<T = any>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
     return this.request<T>(path, { ...options, method: "POST", body });
   }
 
@@ -300,7 +300,7 @@ export class VfetchClient {
    * @param body - The request body, serialized as JSON
    * @param options - Optional request configuration
    */
-  async patch<T>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
+  async patch<T = any>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
     return this.request<T>(path, { ...options, method: "PATCH", body });
   }
 
@@ -311,7 +311,7 @@ export class VfetchClient {
    * @param body - The request body, serialized as JSON
    * @param options - Optional request configuration
    */
-  async put<T>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
+  async put<T = any>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
     return this.request<T>(path, { ...options, method: "PUT", body });
   }
 
@@ -321,7 +321,7 @@ export class VfetchClient {
    * @param path - The URL path relative to baseURL
    * @param options - Optional request configuration
    */
-  async delete<T>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
+  async delete<T = any>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
     return this.request<T>(path, { ...options, method: "DELETE" });
   }
 }

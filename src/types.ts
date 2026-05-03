@@ -2,7 +2,7 @@
  * Represents a successful response from vfetch.
  * @template T The type of the data returned by the server.
  */
-export interface VfetchSuccess<T> {
+export interface VfetchSuccess<T = any> {
   /** Indicates the request was successful. */
   readonly ok: true;
   /** The parsed JSON data from the response. */
@@ -27,7 +27,7 @@ export interface VfetchError<E = string | Record<string, any>> {
 /**
  * The union type of all possible vfetch responses.
  */
-export type VfetchResponse<T> = VfetchSuccess<T> | VfetchError;
+export type VfetchResponse<T = any> = VfetchSuccess<T> | VfetchError;
 
 /**
  * Configuration options for the vfetch client instance.

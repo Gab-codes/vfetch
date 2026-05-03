@@ -368,6 +368,12 @@ const { mutate } = useMutation({
 
 ---
 
+## Contributing
+
+Contributions are welcome. Please read the [Contributing Guide](.github/CONTRIBUTING.md) before opening a PR.
+
+---
+
 ## 📄 License
 
-MIT
+MIT [License](LICENSE.md)
