@@ -16,12 +16,12 @@
 
 ---
 
-## âœ¨ Why vfetch?
+## Why vfetch?
 
 Most HTTP clients fall into two extremes:
 
-- **Axios** â†’ powerful but heavy and legacy-oriented
-- **Ky** â†’ lightweight but limited for real-world auth flows
+- **Axios**  powerful but heavy and legacy-oriented
+- **Ky**  lightweight but limited for real-world auth flows
 
 **vfetch sits in the middle.**
 
@@ -32,7 +32,7 @@ Most HTTP clients fall into two extremes:
 
 ---
 
-## ðŸ“¦ Installation
+## Installation
 
 ```bash
 npm install vfetch-client
@@ -43,7 +43,7 @@ bun add vfetch-client
 
 ---
 
-## ðŸš€ Quick Start
+## Quick Start
 
 ```ts
 import { createClient } from "vfetch-client";
@@ -63,7 +63,7 @@ const api = createClient({
 
 ---
 
-## ðŸ§  Core Response Model
+## Core Response Model
 
 The primary API returns data directly and throws on error. Use `safeGet`, `safePost`, etc. for non-throwing, discriminated union responses:
 
@@ -83,7 +83,7 @@ if (result.ok) {
 ```
 
 ---
-## ðŸ§© TypeScript (Optional)
+## TypeScript (Optional)
 
 Typing is **completely optional**.
 
@@ -99,7 +99,7 @@ Types improve DX â€” they are not enforced at runtime.
 
 ---
 
-## ðŸ”§ Request Methods
+## Request Methods
 
 ```ts
 api.get("/users");
@@ -115,7 +115,7 @@ api.delete("/users/1");
 
 ---
 
-## ðŸ” Authentication & Token Refresh
+## Authentication & Token Refresh
 
 vfetch handles token injection and **deduplicated refresh flows**.
 
@@ -148,7 +148,7 @@ const api = createClient({
 
 ---
 
-## ðŸª Cookie-Based Authentication (Web)
+## Cookie-Based Authentication (Web)
 
 vfetch supports cookie-based auth via the native `credentials` option.
 The default behavior is `"same-origin"`.
@@ -187,29 +187,29 @@ Access-Control-Allow-Origin: https://your-frontend.com
 
 ---
 
-## ðŸ”„ Interceptors
+## Interceptors
 
 ```ts
 const api = createClient({
   baseURL: "https://api.example.com",
 
   onRequest: (url, options) => {
-    console.log("â†’", options.method, url);
+    console.log("requesting ", options.method, url);
   },
 
   onResponse: (url, res, duration) => {
-    console.log("â†", url, `${duration}ms`);
+    console.log("data", url, `${duration}ms`);
   },
 
   onError: (url, err) => {
-    console.error("âœ•", url, err.error);
+    console.error("error", url, err.error);
   },
 });
 ```
 
 ---
 
-## âš ï¸ Error Handling
+## Error Handling
 
 Primary methods throw `VfetchClientError` on failure. You can catch and inspect the error:
 
@@ -236,7 +236,7 @@ Handles:
 
 ---
 
-## â±ï¸ Retry & Timeout
+## Retry & Timeout
 
 ```ts
 const api = createClient({
@@ -258,7 +258,7 @@ await api.get("/heavy", {
 
 ---
 
-## ðŸ§µ Abort Requests
+## Abort Requests
 
 ```ts
 const controller = new AbortController();
