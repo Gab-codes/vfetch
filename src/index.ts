@@ -1,6 +1,6 @@
 export { VfetchClient } from "./client";
 export * from "./types";
-export { normalizeError } from "./errors";
+export { normalizeError, VfetchClientError } from "./errors";
 
 import { VfetchClient } from "./client";
 import { VfetchConfig } from "./types";
@@ -23,7 +23,7 @@ import { VfetchConfig } from "./types";
  * // With type annotation (fully typed)
  * const result = await api.get<User[]>("/users");
  *
- * // Without type annotation (response.data defaults to 'any')
+ * // Without type annotation (response defaults to 'unknown')
  * const result = await api.get("/users");
  * ```
  */

@@ -27,7 +27,7 @@ describe("Hardening - Refresh Robustness", () => {
     });
 
     // Fire 5 concurrent requests
-    const promises = Array.from({ length: 5 }).map(() => client.get("/test"));
+    const promises = Array.from({ length: 5 }).map(() => client.safeGet("/test"));
     const results = await Promise.all(promises);
 
     expect(results.every((r) => !r.ok)).toBe(true);

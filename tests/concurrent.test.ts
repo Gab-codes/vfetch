@@ -43,9 +43,9 @@ describe("Concurrent Requests Refresh Deduplication", () => {
 
     // Fire 3 requests concurrently
     const [res1, res2, res3] = await Promise.all([
-      client.get<{ id: number }>("/test/1"),
-      client.get<{ id: number }>("/test/2"),
-      client.get<{ id: number }>("/test/3"),
+      client.safeGet<{ id: number }>("/test/1"),
+      client.safeGet<{ id: number }>("/test/2"),
+      client.safeGet<{ id: number }>("/test/3"),
     ]);
 
     expect(res1.ok).toBe(true);
@@ -76,7 +76,7 @@ describe("Concurrent Requests Refresh Deduplication", () => {
     });
 
     // First request
-    const res1 = await client.get("/test");
+    const res1 = await client.safeGet("/test");
     expect(res1.ok).toBe(false);
     expect(onRefresh).toHaveBeenCalledTimes(1);
 
@@ -89,7 +89,7 @@ describe("Concurrent Requests Refresh Deduplication", () => {
     // 5. Retry succeeds
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 2 }));
 
-    const res2 = await client.get<{ id: number }>("/test");
+    const res2 = await client.safeGet<{ id: number }>("/test");
     expect(res2.ok).toBe(true);
     expect(onRefresh).toHaveBeenCalledTimes(2); // Should be called again!
   });
@@ -115,8 +115,8 @@ describe("Concurrent Requests Refresh Deduplication", () => {
     });
 
     const [res1, res2] = await Promise.all([
-      client.get("/test/1"),
-      client.get("/test/2"),
+      client.safeGet("/test/1"),
+      client.safeGet("/test/2"),
     ]);
 
     expect(res1.ok).toBe(false);

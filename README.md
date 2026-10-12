@@ -1,4 +1,4 @@
-# vfetch
+﻿# vfetch
 
 <p align="center">
   A lightweight, Axios-like HTTP client built on native <code>fetch</code>.
@@ -16,12 +16,12 @@
 
 ---
 
-## ✨ Why vfetch?
+## âœ¨ Why vfetch?
 
 Most HTTP clients fall into two extremes:
 
-- **Axios** → powerful but heavy and legacy-oriented
-- **Ky** → lightweight but limited for real-world auth flows
+- **Axios** â†’ powerful but heavy and legacy-oriented
+- **Ky** â†’ lightweight but limited for real-world auth flows
 
 **vfetch sits in the middle.**
 
@@ -32,7 +32,7 @@ Most HTTP clients fall into two extremes:
 
 ---
 
-## 📦 Installation
+## ðŸ“¦ Installation
 
 ```bash
 npm install vfetch-client
@@ -43,7 +43,7 @@ bun add vfetch-client
 
 ---
 
-## 🚀 Quick Start
+## ðŸš€ Quick Start
 
 ```ts
 import { createClient } from "vfetch-client";
@@ -52,32 +52,38 @@ const api = createClient({
   baseURL: "https://api.example.com",
 });
 
-const res = await api.get("/users");
+  const users = await api.get<User[]>("/users");
+  console.log(users);
+  if (res.ok) {
+  console.log(users);
 
-if (res.ok) {
-  console.log(res.data);
-} else {
-  console.error(res.error);
-}
+    console.error(res.error);
+  }
 ```
 
 ---
 
-## 🧠 Core Response Model
+## ðŸ§  Core Response Model
 
-vfetch never throws HTTP errors. Everything resolves into a consistent shape:
+The primary API returns data directly and throws on error. Use `safeGet`, `safePost`, etc. for non-throwing, discriminated union responses:
 
 ```ts
 type VfetchResponse<T> =
   | { ok: true; data: T; status: number }
-  | { ok: false; error: string; status: number };
+  | { ok: false; error: string | Record<string, unknown>; status: number };
 ```
 
-This removes the need for excessive `try/catch` and keeps control flow predictable.
+```ts
+const result = await api.safeGet<User[]>("/users");
+if (result.ok) {
+  console.log(result.data);
+} else {
+  console.error(result.error, result.status);
+}
+```
 
 ---
-
-## 🧩 TypeScript (Optional)
+## ðŸ§© TypeScript (Optional)
 
 Typing is **completely optional**.
 
@@ -89,11 +95,11 @@ const res = await api.get("/users");
 const res = await api.get<User[]>("/users");
 ```
 
-Types improve DX — they are not enforced at runtime.
+Types improve DX â€” they are not enforced at runtime.
 
 ---
 
-## 🔧 Request Methods
+## ðŸ”§ Request Methods
 
 ```ts
 api.get("/users");
@@ -109,7 +115,7 @@ api.delete("/users/1");
 
 ---
 
-## 🔐 Authentication & Token Refresh
+## ðŸ” Authentication & Token Refresh
 
 vfetch handles token injection and **deduplicated refresh flows**.
 
@@ -142,7 +148,7 @@ const api = createClient({
 
 ---
 
-## 🍪 Cookie-Based Authentication (Web)
+## ðŸª Cookie-Based Authentication (Web)
 
 vfetch supports cookie-based auth via the native `credentials` option.
 The default behavior is `"same-origin"`.
@@ -181,41 +187,43 @@ Access-Control-Allow-Origin: https://your-frontend.com
 
 ---
 
-## 🔄 Interceptors
+## ðŸ”„ Interceptors
 
 ```ts
 const api = createClient({
   baseURL: "https://api.example.com",
 
   onRequest: (url, options) => {
-    console.log("→", options.method, url);
+    console.log("â†’", options.method, url);
   },
 
   onResponse: (url, res, duration) => {
-    console.log("←", url, `${duration}ms`);
+    console.log("â†", url, `${duration}ms`);
   },
 
   onError: (url, err) => {
-    console.error("✕", url, err.error);
+    console.error("âœ•", url, err.error);
   },
 });
 ```
 
 ---
 
-## ⚠️ Error Handling
+## âš ï¸ Error Handling
 
-No thrown HTTP errors:
+Primary methods throw `VfetchClientError` on failure. You can catch and inspect the error:
 
 ```ts
-const res = await api.get("/users");
+import { VfetchClientError } from "vfetch-client";
 
-if (!res.ok) {
-  console.error(res.status, res.error);
-  return;
+try {
+  const users = await api.get<User[]>("/users");
+  console.log(users);
+} catch (error) {
+  if (error instanceof VfetchClientError) {
+    console.error(error.status, error.error);
+  }
 }
-
-console.log(res.data);
 ```
 
 Handles:
@@ -228,7 +236,7 @@ Handles:
 
 ---
 
-## ⏱️ Retry & Timeout
+## â±ï¸ Retry & Timeout
 
 ```ts
 const api = createClient({
@@ -250,7 +258,7 @@ await api.get("/heavy", {
 
 ---
 
-## 🧵 Abort Requests
+## ðŸ§µ Abort Requests
 
 ```ts
 const controller = new AbortController();
@@ -264,116 +272,36 @@ controller.abort();
 
 ---
 
-## ⚛️ TanStack Query (React Query)
+## TanStack Query (React Query)
 
-vfetch works cleanly with TanStack Query.
+vfetch works cleanly with TanStack Query. The throwing API is a natural fit - successful responses return the payload directly, and failures reject so TanStack Query can track errors properly.
 
 ---
 
 ### Queries
 
-#### Pattern A — Clean abstraction
-
 ```ts
-export const getUsersFn = async () => {
-  return api.get("/users");
-};
-```
-
-```ts
-const { data } = useQuery({
+const { data, isError, error } = useQuery({
   queryKey: ["users"],
-  queryFn: getUsersFn,
+  queryFn: () => api.get<User[]>("/users"),
 });
 ```
-
----
-
-#### Pattern B — Inline
-
-```ts
-const { data } = useQuery({
-  queryKey: ["users"],
-  queryFn: async () => {
-    return api.get("/users");
-  },
-});
-```
-
----
 
 ### Mutations
 
-#### Named function
-
-```ts
-export const resendOtpFn = async (identifier: string) => {
-  return api.post("/auth/request-otp", { identifier });
-};
-```
-
 ```ts
 const { mutate } = useMutation({
-  mutationFn: resendOtpFn,
+  mutationFn: (identifier: string) => api.post("/auth/request-otp", { identifier }),
 });
 ```
 
 ---
-
-#### Inline mutation
-
-```ts
-const { mutate } = useMutation({
-  mutationFn: async (identifier: string) => {
-    return api.post("/auth/request-otp", { identifier });
-  },
-});
-```
-
----
-
-## 🧭 Design Philosophy
-
-- **Transport layer only**
-  No schema validation, no assumptions about backend structure
-
-- **Predictable responses**
-  No hidden throws — always `{ ok, data | error }`
-
-- **Concurrency safety first**
-  Token refresh, retries, and interceptors behave correctly under load
-
-- **Minimal & dependency-free**
-  Built directly on native `fetch`
-
----
-
-## ⚖️ vfetch vs Axios vs Ky
-
-| Feature                | vfetch | Axios   | Ky              |
-| ---------------------- | ------ | ------- | --------------- |
-| Built on fetch         | ✅     | ❌      | ✅              |
-| Zero dependencies      | ✅     | ❌      | ✅              |
-| Interceptors           | ✅     | ✅      | ⚠️ (hooks only) |
-| Token refresh flow     | ✅     | manual  | ❌              |
-| TypeScript-first       | ✅     | partial | ✅              |
-| Response normalization | ✅     | ❌      | partial         |
-| Lightweight            | ✅     | ❌      | ✅              |
-
-### Summary
-
-- **Axios** → mature, but heavier and more legacy-oriented
-- **Ky** → minimal, but lacks structured auth + retry control
-- **vfetch** → modern balance with safer concurrency and predictable responses
-
----
-
 ## Contributing
 
 Contributions are welcome. Please read the [Contributing Guide](.github/CONTRIBUTING.md) before opening a PR.
 
 ---
 
-## 📄 License
+## License
 
 MIT [License](LICENSE.md)

@@ -13,9 +13,11 @@ describe('Hardening - Response Parsing', () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
     const client = createClient({ baseURL: 'https://test.com' });
-    const res = await client.get('/test');
+    const res = await client.safeGet('/test');
+    expect(res.ok).toBe(true);
+    if (res.ok) {
       expect(res.status).toBe(204);
-      expect(res).toEqual({);
+      expect(res.data).toEqual({});
     }
   });
 
@@ -23,9 +25,11 @@ describe('Hardening - Response Parsing', () => {
     fetchMock.mockResolvedValueOnce(new Response('', { status: 200 }));
 
     const client = createClient({ baseURL: 'https://test.com' });
-    const res = await client.get('/test');
+    const res = await client.safeGet('/test');
+    expect(res.ok).toBe(true);
+    if (res.ok) {
       expect(res.status).toBe(200);
-      expect(res).toEqual({);
+      expect(res.data).toEqual({});
     }
   });
 });

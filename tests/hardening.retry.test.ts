@@ -28,7 +28,7 @@ describe("Hardening - Retry System Correctness", () => {
     // Abort immediately
     controller.abort();
 
-    const res = await client.get("/test", { signal: controller.signal });
+    const res = await client.safeGet("/test", { signal: controller.signal });
     expect(res.ok).toBe(false);
     expect(res.status).toBe(0);
     // Even with retry: 5, it should not have retried
@@ -43,7 +43,7 @@ describe("Hardening - Retry System Correctness", () => {
     });
 
     const client = createClient({ baseURL: "https://test.com", retry: 3 });
-    const res = await client.get("/test");
+    const res = await client.safeGet("/test");
 
     expect(res.ok).toBe(false);
     // 1 initial + 3 retries = 4 calls total

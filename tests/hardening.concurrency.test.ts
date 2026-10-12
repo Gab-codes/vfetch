@@ -41,7 +41,7 @@ describe("Hardening - Concurrency Safety", () => {
     });
 
     const promises = Array.from({ length: 10 }).map((_, i) =>
-      client.get("/test/" + i),
+      client.safeGet("/test/" + i),
     );
     const results = await Promise.all(promises);
 

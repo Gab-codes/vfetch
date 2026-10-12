@@ -6,11 +6,11 @@ describe("Error Handling", () => {
   const client = createClient({ baseURL: "https://dummyjson.com" });
 
   it("should handle 404 correctly", async () => {
-    await expect(client.get("")).rejects.toThrow();
-    const safeRes = await client.safeGet("");
+    await expect(client.get("/invalid-endpoint-12345")).rejects.toThrow();
+    const safeRes = await client.safeGet("/invalid-endpoint-12345");
     expect(safeRes.ok).toBe(false);
     if (!safeRes.ok) {
-      expect(safeRes.status).toBe();
+      expect(safeRes.status).toBe(404);
       expect(safeRes.error).toBeDefined();
     }
   }, 15000);
@@ -19,7 +19,7 @@ describe("Error Handling", () => {
     const badClient = createClient({
       baseURL: "https://invalid-host-that-does-not-exist.local",
     });
-    const res = await badClient.get("/test");
+    const res = await badClient.safeGet("/test");
 
     expect(res.ok).toBe(false);
     if (!res.ok) {
@@ -48,7 +48,7 @@ describe("Error Handling", () => {
         retryDelay: 10, // small delay for fast test
       });
 
-      const res = await client.get("/test");
+      const res = await client.safeGet("/test");
 
       expect(res.ok).toBe(false);
       expect(fetchMock).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
@@ -155,7 +155,7 @@ describe("Error Handling", () => {
       });
 
       const client = createClient({ baseURL: "https://api.test.com" });
-      const res = await client.get("/test", { timeout: 10 }); // 10ms timeout
+      const res = await client.safeGet("/test", { timeout: 10 }); // 10ms timeout
 
       expect(res.ok).toBe(false);
       if (!res.ok) {
