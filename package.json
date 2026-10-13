@@ -38,7 +38,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Gab-codes/vfetch.git"
+    "url": "git+https://github.com/Gab-codes/vfetch.git"
   },
   "homepage": "https://github.com/Gab-codes/vfetch#readme",
   "bugs": {
