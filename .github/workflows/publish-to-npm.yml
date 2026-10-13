@@ -1,79 +1,79 @@
 name: Publish to npm
 
-# Trigger only when code is pushed to main branch
 on:
   push:
     branches:
       - main
 
-# Restrict permissions to minimum required for security
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
     name: Build, test, and publish
     runs-on: ubuntu-latest
-    permissions:
-      contents: read # Only need to read repository contents
 
     steps:
-      # Checkout the repository code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Set up Node.js with caching for npm dependencies
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*' # Use latest LTS version of Node.js
-          registry-url: 'https://registry.npmjs.org' # Configure npm registry
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
 
-      # Cache npm dependencies to speed up subsequent runs
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
+      - name: Ensure compatible npm version
+        run: |
+          npm install --global npm@^11.5.1
+          node --version
+          npm --version
 
-      # Install dependencies using clean install for reproducible builds
       - name: Install dependencies
         run: npm ci
 
-      # Run tests to ensure package is in working state
       - name: Run tests
         run: npm test
 
-      # Build the package (compile TypeScript, generate bundles and types)
+      - name: Check coverage
+        run: npm run coverage
+
       - name: Build package
         run: npm run build
 
-      # Check if version already exists on npm registry to avoid republishing
       - name: Check if version exists on npm
         id: check-version
+        shell: bash
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
-          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Version $PACKAGE_VERSION of $PACKAGE_NAME already exists on npm."
+
+          set +e
+          OUTPUT=$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>&1)
+          STATUS=$?
+          set -e
+
+          if [ "$STATUS" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Version $PACKAGE_VERSION already exists on npm."
+          elif echo "$OUTPUT" | grep -q 'E404'; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Version $PACKAGE_VERSION is not published yet."
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "Version $PACKAGE_VERSION of $PACKAGE_NAME does not exist on npm. Proceeding with publish."
+            echo "$OUTPUT"
+            echo "Unable to verify the package version."
+            exit "$STATUS"
           fi
 
-      # Publish to npm if version doesn't already exist
       - name: Publish to npm
         if: steps.check-version.outputs.exists == 'false'
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          # Check if package is scoped (starts with @) and publish with public access if needed
+
           if [[ "$PACKAGE_NAME" == @* ]]; then
             npm publish --access public
           else
             npm publish
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # Use npm token from GitHub Secrets
