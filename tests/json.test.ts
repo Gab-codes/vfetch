@@ -18,13 +18,17 @@ describe('JSON Parsing', () => {
     fetchMock.mockResolvedValueOnce(new Response('this is not json', { status: 200 }));
 
     const client = createClient({ baseURL: 'https://api.test.com' });
-    const res = await client.get('/test');
-
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.status).toBe(200);
-      expect(typeof res.error).toBe('string');
-      expect((res.error as string).toLowerCase()).toContain('failed to parse json response');
+    let err: any;
+    try {
+      await client.get('/test');
+    } catch (e) {
+      err = e;
     }
+    expect(err).toBeDefined();
+    const res = err;
+      expect(err.status).toBe(200);
+      expect(typeof err.error).toBe('string');
+      expect((err.error as string).toLowerCase()).toContain('failed to parse json response');
+    
   });
 });

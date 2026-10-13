@@ -35,11 +35,8 @@ describe('Token Refresh Flow', () => {
     });
 
     const res = await client.get<{ success: boolean }>('/test');
-
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.data.success).toBe(true);
-    }
+      expect(res.success).toBe(true);
+    
     
     expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(onAuthFailure).not.toHaveBeenCalled();
@@ -66,12 +63,16 @@ describe('Token Refresh Flow', () => {
       onAuthFailure
     });
 
-    const res = await client.get('/test');
-
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.status).toBe(401);
+    let err: any;
+    try {
+      await client.get('/test');
+    } catch (e) {
+      err = e;
     }
+    expect(err).toBeDefined();
+    const res = err;
+      expect(err.status).toBe(401);
+    
     expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -87,12 +88,16 @@ describe('Token Refresh Flow', () => {
       // no onRefresh
     });
 
-    const res = await client.get('/test');
-
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.status).toBe(401);
+    let err: any;
+    try {
+      await client.get('/test');
+    } catch (e) {
+      err = e;
     }
+    expect(err).toBeDefined();
+    const res = err;
+      expect(err.status).toBe(401);
+    
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
   });
@@ -109,12 +114,16 @@ describe('Token Refresh Flow', () => {
       onAuthFailure
     });
 
-    const res = await client.get('/test');
-
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.status).toBe(401);
+    let err: any;
+    try {
+      await client.get('/test');
+    } catch (e) {
+      err = e;
     }
+    expect(err).toBeDefined();
+    const res = err;
+      expect(err.status).toBe(401);
+    
     expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
   });
@@ -134,12 +143,16 @@ describe('Token Refresh Flow', () => {
       onAuthFailure
     });
 
-    const res = await client.get('/test');
-
-    expect(res.ok).toBe(false);
-    if (!res.ok) {
-      expect(res.status).toBe(401);
+    let err: any;
+    try {
+      await client.get('/test');
+    } catch (e) {
+      err = e;
     }
+    expect(err).toBeDefined();
+    const res = err;
+      expect(err.status).toBe(401);
+    
     expect(onRefresh).toHaveBeenCalledTimes(1);
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);

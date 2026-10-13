@@ -69,23 +69,23 @@ describe("vFetch Client", () => {
       baseURL: "https://dummyjson.com",
     });
 
-    const product = await api.get<{ id: number }>("/products/1");
+    const product = await api.safeGet<{ id: number }>("/products/1");
     assertSuccess(product);
     expect(product.data.id).toBe(1);
 
-    const created = await api.post<{ title: string }>("/products/add", {
+    const created = await api.safePost<{ title: string }>("/products/add", {
       title: "Test",
     });
     assertSuccess(created);
     expect(created.data.title).toBe("Test");
 
-    const updated = await api.put<{ title: string }>("/products/1", {
+    const updated = await api.safePut<{ title: string }>("/products/1", {
       title: "Updated",
     });
     assertSuccess(updated);
     expect(updated.data.title).toBe("Updated");
 
-    const deleted = await api.delete<{ isDeleted: boolean }>("/products/1");
+    const deleted = await api.safeDelete<{ isDeleted: boolean }>("/products/1");
     assertSuccess(deleted);
     expect(deleted.data.isDeleted).toBe(true);
   }, 15000);
@@ -98,7 +98,7 @@ describe("vFetch Client", () => {
       baseURL: "https://dummyjson.com",
     });
 
-    const res = await api.get<{ products: unknown[] }>("/products", {
+    const res = await api.safeGet<{ products: unknown[] }>("/products", {
       params: { limit: "2", skip: "1" },
     });
 
@@ -129,7 +129,7 @@ describe("vFetch Client", () => {
           getToken: () => "abc123",
         });
 
-        const res = await api.get("/test", {
+        const res = await api.safeGet("/test", {
           headers: { "X-Test": "1" },
         });
 
@@ -148,7 +148,7 @@ describe("vFetch Client", () => {
       baseURL: "https://dummyjson.com",
     });
 
-    const res = await api.get("/nonexistent");
+    const res = await api.safeGet("/nonexistent");
 
     assertError(res);
     expect(res.status).toBe(404);
@@ -205,7 +205,7 @@ describe("vFetch Client", () => {
           },
         });
 
-        const res = await api.get<{ id: number }>("/me");
+        const res = await api.safeGet<{ id: number }>("/me");
 
         assertSuccess(res);
         expect(res.data.id).toBe(1);
@@ -267,9 +267,9 @@ describe("vFetch Client", () => {
         });
 
         const results = await Promise.all([
-          api.get("/me"),
-          api.get("/me"),
-          api.get("/me"),
+          api.safeGet("/me"),
+          api.safeGet("/me"),
+          api.safeGet("/me"),
         ]);
 
         expect(results.every((r) => r.ok)).toBe(true);
@@ -289,7 +289,7 @@ describe("vFetch Client", () => {
           baseURL: "https://x.com",
         });
 
-        const res = await api.get("/test");
+        const res = await api.safeGet("/test");
 
         assertError(res);
       },

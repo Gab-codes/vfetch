@@ -1,6 +1,6 @@
-import { normalizeError } from "./errors";
+import { normalizeError, VfetchClientError } from "./errors";
 import { Interceptor } from "./interceptors";
-import { RequestOptions, VfetchConfig, VfetchResponse, VfetchError } from "./types";
+import { RequestOptions, VfetchConfig, VfetchResponse } from "./types";
 
 /** Default number of retry attempts for network failures. */
 const DEFAULT_RETRY_COUNT = 0;
@@ -69,13 +69,13 @@ export class VfetchClient {
   /**
    * Internal request handler that implements the full request lifecycle.
    */
-  private async request<T = any>(
+  private async request<T = unknown>(
     path: string,
     options: RequestOptions & {
       method: string;
       body?: unknown;
     },
-  ): Promise<VfetchResponse<T>> {
+  ): Promise<{ data: T; status: number }> {
     const {
       method,
       params,
@@ -93,7 +93,7 @@ export class VfetchClient {
 
     let attempt = 0;
 
-    const executeRequest = async (): Promise<VfetchResponse<T>> => {
+    const executeRequest = async (): Promise<{ data: T; status: number }> => {
       const startTime = Date.now();
       const url = this.buildUrl(path, params);
       const headers = this.buildHeaders(requestHeaders);
@@ -148,8 +148,8 @@ export class VfetchClient {
 
         if (!response.ok) {
           const errorResponse = await normalizeError(response);
-          this.safeInvokeHook(() => this.config.onError?.(urlString, errorResponse));
-          return errorResponse;
+          this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: errorResponse.error as string | Record<string, unknown>, status: errorResponse.status }));
+          throw errorResponse;
         }
 
         let data: T;
@@ -161,19 +161,18 @@ export class VfetchClient {
             data = text ? JSON.parse(text) : ({} as T);
           }
         } catch {
-          const parseError: VfetchError = {
-            ok: false,
-            error: `Failed to parse JSON response from ${method} ${path}`,
-            status: response.status,
-          };
-          this.safeInvokeHook(() => this.config.onError?.(urlString, parseError));
-          return parseError;
+          const parseError = new VfetchClientError(
+            `Failed to parse JSON response from ${method} ${path}`,
+            response.status
+          );
+          this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: parseError.error as string | Record<string, unknown>, status: parseError.status }));
+          throw parseError;
         }
 
         // Lifecycle Hook: onResponse
         this.safeInvokeHook(() => this.config.onResponse?.(urlString, response, durationMs));
 
-        return { data, status: response.status, ok: true };
+        return { data, status: response.status };
 
       } catch (error) {
         this.clearScheduledTimeout(timeoutId);
@@ -181,13 +180,12 @@ export class VfetchClient {
         // Check if error is due to AbortSignal (timeout or manual cancellation)
         if (error instanceof Error && error.name === "AbortError") {
           const isTimeout = timeoutController?.signal.aborted === true;
-          const abortError: VfetchError<string> = {
-            ok: false,
-            error: isTimeout ? "Request timed out" : "Request was cancelled",
-            status: 0,
-          };
-          this.safeInvokeHook(() => this.config.onError?.(urlString, abortError));
-          return abortError;
+          const abortError = new VfetchClientError(
+            isTimeout ? "Request timed out" : "Request was cancelled",
+            0
+          );
+          this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: abortError.error as string | Record<string, unknown>, status: abortError.status }));
+          throw abortError;
         }
 
         // Network failure — potentially retry
@@ -200,8 +198,8 @@ export class VfetchClient {
         }
 
         const normalizedError = await normalizeError(error);
-        this.safeInvokeHook(() => this.config.onError?.(urlString, normalizedError));
-        return normalizedError;
+        this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: normalizedError.error as string | Record<string, unknown>, status: normalizedError.status }));
+        throw normalizedError;
       }
     };
 
@@ -277,51 +275,117 @@ export class VfetchClient {
    * @template T The expected response data type
    * @param path - The URL path relative to baseURL
    * @param options - Optional request configuration
+   * @returns The raw data from the response. Throws a VfetchClientError on failure.
    */
-  async get<T = any>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
-    return this.request<T>(path, { ...options, method: "GET" });
+  async get<T = unknown>(path: string, options?: RequestOptions): Promise<T> {
+    const { data } = await this.request<T>(path, { ...options, method: "GET" });
+    return data;
   }
 
   /**
    * Sends a POST request.
-   * @template T The expected response data type
-   * @param path - The URL path relative to baseURL
-   * @param body - The request body, serialized as JSON
-   * @param options - Optional request configuration
    */
-  async post<T = any>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
-    return this.request<T>(path, { ...options, method: "POST", body });
+  async post<T = unknown>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    const { data } = await this.request<T>(path, { ...options, method: "POST", body });
+    return data;
   }
 
   /**
    * Sends a PATCH request.
-   * @template T The expected response data type
-   * @param path - The URL path relative to baseURL
-   * @param body - The request body, serialized as JSON
-   * @param options - Optional request configuration
    */
-  async patch<T = any>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
-    return this.request<T>(path, { ...options, method: "PATCH", body });
+  async patch<T = unknown>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    const { data } = await this.request<T>(path, { ...options, method: "PATCH", body });
+    return data;
   }
 
   /**
    * Sends a PUT request.
-   * @template T The expected response data type
-   * @param path - The URL path relative to baseURL
-   * @param body - The request body, serialized as JSON
-   * @param options - Optional request configuration
    */
-  async put<T = any>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
-    return this.request<T>(path, { ...options, method: "PUT", body });
+  async put<T = unknown>(path: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    const { data } = await this.request<T>(path, { ...options, method: "PUT", body });
+    return data;
   }
 
   /**
    * Sends a DELETE request.
-   * @template T The expected response data type
-   * @param path - The URL path relative to baseURL
-   * @param options - Optional request configuration
    */
-  async delete<T = any>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
-    return this.request<T>(path, { ...options, method: "DELETE" });
+  async delete<T = unknown>(path: string, options?: RequestOptions): Promise<T> {
+    const { data } = await this.request<T>(path, { ...options, method: "DELETE" });
+    return data;
+  }
+
+  /**
+   * Sends a GET request safely, returning a VfetchResponse without throwing.
+   */
+  async safeGet<T = unknown>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
+    try {
+      const { data, status } = await this.request<T>(path, { ...options, method: "GET" });
+      return { ok: true, data, status };
+    } catch (error) {
+      if (error instanceof VfetchClientError) {
+        return { ok: false, error: error.error as string, status: error.status };
+      }
+      return { ok: false, error: "An unknown error occurred", status: 0 };
+    }
+  }
+
+  /**
+   * Sends a POST request safely, returning a VfetchResponse without throwing.
+   */
+  async safePost<T = unknown>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
+    try {
+      const { data, status } = await this.request<T>(path, { ...options, method: "POST", body });
+      return { ok: true, data, status };
+    } catch (error) {
+      if (error instanceof VfetchClientError) {
+        return { ok: false, error: error.error as string, status: error.status };
+      }
+      return { ok: false, error: "An unknown error occurred", status: 0 };
+    }
+  }
+
+  /**
+   * Sends a PATCH request safely, returning a VfetchResponse without throwing.
+   */
+  async safePatch<T = unknown>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
+    try {
+      const { data, status } = await this.request<T>(path, { ...options, method: "PATCH", body });
+      return { ok: true, data, status };
+    } catch (error) {
+      if (error instanceof VfetchClientError) {
+        return { ok: false, error: error.error as string, status: error.status };
+      }
+      return { ok: false, error: "An unknown error occurred", status: 0 };
+    }
+  }
+
+  /**
+   * Sends a PUT request safely, returning a VfetchResponse without throwing.
+   */
+  async safePut<T = unknown>(path: string, body?: unknown, options?: RequestOptions): Promise<VfetchResponse<T>> {
+    try {
+      const { data, status } = await this.request<T>(path, { ...options, method: "PUT", body });
+      return { ok: true, data, status };
+    } catch (error) {
+      if (error instanceof VfetchClientError) {
+        return { ok: false, error: error.error as string, status: error.status };
+      }
+      return { ok: false, error: "An unknown error occurred", status: 0 };
+    }
+  }
+
+  /**
+   * Sends a DELETE request safely, returning a VfetchResponse without throwing.
+   */
+  async safeDelete<T = unknown>(path: string, options?: RequestOptions): Promise<VfetchResponse<T>> {
+    try {
+      const { data, status } = await this.request<T>(path, { ...options, method: "DELETE" });
+      return { ok: true, data, status };
+    } catch (error) {
+      if (error instanceof VfetchClientError) {
+        return { ok: false, error: error.error as string, status: error.status };
+      }
+      return { ok: false, error: "An unknown error occurred", status: 0 };
+    }
   }
 }

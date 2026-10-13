@@ -11,12 +11,9 @@ describe('Query Parameters', () => {
         skip: 10,
       }
     });
-
-    expect(res.ok).toBe(true);
-    if (res.ok) {
-      expect(res.data.limit).toBe(5);
-      expect(res.data.skip).toBe(10);
-      expect(res.data.products.length).toBeLessThanOrEqual(5);
-    }
+      expect(res.limit).toBe(5);
+      expect(res.skip).toBe(10);
+      expect(res.products.length).toBeLessThanOrEqual(5);
+    
   }, 15000);
 });
