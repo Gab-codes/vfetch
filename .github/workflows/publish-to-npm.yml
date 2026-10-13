@@ -69,11 +69,13 @@ jobs:
 
       - name: Publish to npm
         if: steps.check-version.outputs.exists == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }} # Note: With OIDC, you don't need a real secret value here, but setup-node/npm often expects the context or you can pass the provenance flag
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
 
           if [[ "$PACKAGE_NAME" == @* ]]; then
-            npm publish --access public
+            npm publish --access public --provenance
           else
-            npm publish
+            npm publish --provenance
           fi
