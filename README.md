@@ -95,7 +95,7 @@ const res = await api.get("/users");
 const res = await api.get<User[]>("/users");
 ```
 
-Types improve DX â€” they are not enforced at runtime.
+Types improve DX they are not enforced at runtime.
 
 ---
 
