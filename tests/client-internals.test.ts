@@ -41,7 +41,7 @@ describe("Client Internals - combineAbortSignals Fallback", () => {
   });
 
   it("should combine user signal and timeout signal via fallback", async () => {
-    let capturedSignal: AbortSignal | undefined;
+    let capturedSignal: AbortSignal | null | undefined;
     fetchMock.mockImplementationOnce(async (_, init) => {
       capturedSignal = init?.signal;
       return jsonResponse({ success: true });
@@ -92,7 +92,7 @@ describe("Client Internals - resolveSignal", () => {
   });
 
   it("should return userSignal when only userSignal is provided (no timeout)", async () => {
-    let capturedSignal: AbortSignal | undefined;
+    let capturedSignal: AbortSignal | null | undefined;
     fetchMock.mockImplementationOnce(async (_, init) => {
       capturedSignal = init?.signal;
       return jsonResponse({ success: true });
@@ -106,7 +106,7 @@ describe("Client Internals - resolveSignal", () => {
   });
 
   it("should return timeoutController.signal when only timeout is configured", async () => {
-    let capturedSignal: AbortSignal | undefined;
+    let capturedSignal: AbortSignal | null | undefined;
     fetchMock.mockImplementationOnce(async (_, init) => {
       capturedSignal = init?.signal;
       return jsonResponse({ success: true });
@@ -119,7 +119,7 @@ describe("Client Internals - resolveSignal", () => {
   });
 
   it("should return undefined when neither userSignal nor timeout", async () => {
-    let capturedSignal: AbortSignal | undefined;
+    let capturedSignal: AbortSignal | null | undefined;
     fetchMock.mockImplementationOnce(async (_, init) => {
       capturedSignal = init?.signal;
       return jsonResponse({ success: true });

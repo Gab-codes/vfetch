@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createClient } from "../../src";
+import { VfetchClientError } from "../../src/errors";
 import type {
   VfetchResponse,
   VfetchSuccess,
@@ -62,49 +63,115 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("vFetch Client", () => {
   // --------------------------------------------
-  // Basic Requests
+  // Basic Requests (primary throwing API + safe spot-check)
   // --------------------------------------------
-  it("should handle basic CRUD requests", async () => {
+  it("should handle basic CRUD requests via the throwing API", async () => {
     const api = createClient({
-      baseURL: "https://dummyjson.com",
+      baseURL: "https://api.test.com",
     });
 
-    const product = await api.safeGet<{ id: number }>("/products/1");
-    assertSuccess(product);
-    expect(product.data.id).toBe(1);
+    await withMockedFetch(
+      async (input, init) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        const body = init?.body ? (JSON.parse(String(init.body)) as { title?: string }) : {};
 
-    const created = await api.safePost<{ title: string }>("/products/add", {
-      title: "Test",
-    });
-    assertSuccess(created);
-    expect(created.data.title).toBe("Test");
+        if (url.endsWith("/products/1") && method === "GET") {
+          return jsonResponse({ id: 1, title: "Essence Mascara Lash Princess" });
+        }
+        if (url.endsWith("/products/add") && method === "POST") {
+          return jsonResponse({ id: 195, title: body.title }, 201);
+        }
+        if (url.endsWith("/products/1") && method === "PUT") {
+          return jsonResponse({ id: 1, title: body.title });
+        }
+        if (url.endsWith("/products/1") && method === "PATCH") {
+          return jsonResponse({ id: 1, title: body.title });
+        }
+        if (url.endsWith("/products/1") && method === "DELETE") {
+          return jsonResponse({ id: 1, isDeleted: true });
+        }
+        return jsonResponse({}, 404);
+      },
+      async () => {
+        const product = await api.get<{ id: number; title: string }>("/products/1");
+        expect(product).not.toHaveProperty("ok");
+        expect(product.id).toBe(1);
+        expect(typeof product.title).toBe("string");
 
-    const updated = await api.safePut<{ title: string }>("/products/1", {
-      title: "Updated",
-    });
-    assertSuccess(updated);
-    expect(updated.data.title).toBe("Updated");
+        const created = await api.post<{ id: number; title: string }>("/products/add", {
+          title: "Test",
+        });
+        expect(created).not.toHaveProperty("ok");
+        expect(created.id).toBe(195);
+        expect(created.title).toBe("Test");
 
-    const deleted = await api.safeDelete<{ isDeleted: boolean }>("/products/1");
-    assertSuccess(deleted);
-    expect(deleted.data.isDeleted).toBe(true);
-  }, 15000);
+        const updated = await api.put<{ id: number; title: string }>("/products/1", {
+          title: "Updated",
+        });
+        expect(updated).not.toHaveProperty("ok");
+        expect(updated.id).toBe(1);
+        expect(updated.title).toBe("Updated");
+
+        const patched = await api.patch<{ id: number; title: string }>("/products/1", {
+          title: "Patched",
+        });
+        expect(patched).not.toHaveProperty("ok");
+        expect(patched.id).toBe(1);
+        expect(patched.title).toBe("Patched");
+
+        const deleted = await api.delete<{ id: number; isDeleted: boolean }>("/products/1");
+        expect(deleted).not.toHaveProperty("ok");
+        expect(deleted.id).toBe(1);
+        expect(deleted.isDeleted).toBe(true);
+
+        // Representative safe* coverage: the optional non-throwing API still works.
+        const safe = await api.safeGet<{ id: number }>("/products/1");
+        assertSuccess(safe);
+        expect(safe.data.id).toBe(1);
+
+        // Throwing API rejects with VfetchClientError (404); safe API normalizes.
+        const failure = await api.get("/nonexistent").catch((e: unknown) => e);
+        expect(failure).toBeInstanceOf(VfetchClientError);
+        expect((failure as VfetchClientError).status).toBe(404);
+
+        const safeFailure = await api.safeGet("/nonexistent");
+        assertError(safeFailure);
+        expect(safeFailure.status).toBe(404);
+      },
+    );
+  });
 
   // --------------------------------------------
   // Query Params
   // --------------------------------------------
   it("should handle query parameters correctly", async () => {
     const api = createClient({
-      baseURL: "https://dummyjson.com",
+      baseURL: "https://api.test.com",
     });
 
-    const res = await api.safeGet<{ products: unknown[] }>("/products", {
-      params: { limit: "2", skip: "1" },
-    });
+    await withMockedFetch(
+      async (input) => {
+        const url = new URL(String(input));
+        const limit = Number(url.searchParams.get("limit") ?? "2");
+        const skip = Number(url.searchParams.get("skip") ?? "1");
+        return jsonResponse({
+          products: Array.from({ length: limit }, (_, i) => ({ id: skip + i + 1 })),
+          total: 194,
+          skip,
+          limit,
+        });
+      },
+      async () => {
+        const res = await api.safeGet<{ products: unknown[] }>("/products", {
+          params: { limit: "2", skip: "1" },
+        });
 
-    assertSuccess(res);
-    expect(res.data.products.length).toBeLessThanOrEqual(2);
-  }, 15000);
+        assertSuccess(res);
+        expect(res.data.products.length).toBeLessThanOrEqual(2);
+      },
+    );
+  });
 
   // --------------------------------------------
   // Header + Token Injection
@@ -141,18 +208,27 @@ describe("vFetch Client", () => {
   });
 
   // --------------------------------------------
-  // Error Handling
+  // Error Handling (throwing rejects, safe normalizes — same 404)
   // --------------------------------------------
   it("should normalize errors correctly", async () => {
     const api = createClient({
-      baseURL: "https://dummyjson.com",
+      baseURL: "https://api.test.com",
     });
 
-    const res = await api.safeGet("/nonexistent");
+    await withMockedFetch(
+      async () => jsonResponse({ message: "Not Found" }, 404),
+      async () => {
+        const failure = await api.get("/nonexistent").catch((e: unknown) => e);
+        expect(failure).toBeInstanceOf(VfetchClientError);
+        expect((failure as VfetchClientError).status).toBe(404);
 
-    assertError(res);
-    expect(res.status).toBe(404);
-  }, 15000);
+        const res = await api.safeGet("/nonexistent");
+
+        assertError(res);
+        expect(res.status).toBe(404);
+      },
+    );
+  });
 
   // --------------------------------------------
   // Refresh Flow

@@ -24,7 +24,9 @@
     "dev": "tsup src/index.ts --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json"
   },
   "keywords": [
     "fetch",

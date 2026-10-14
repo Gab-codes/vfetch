@@ -4,19 +4,40 @@ import { VfetchClientError, normalizeError } from "../src/errors";
 import { withMockedFetch, FetchMock } from "./utils";
 
 describe("Error Handling", () => {
-  const client = createClient({ baseURL: "https://dummyjson.com" });
+  const client = createClient({ baseURL: "https://api.test.com" });
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    fetchMock = withMockedFetch();
+  });
+
+  afterEach(() => {
+    fetchMock.mockRestore();
+  });
 
   it("should handle 404 correctly", async () => {
-    await expect(client.get("/invalid-endpoint-12345")).rejects.toThrow();
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+    );
+    const err = await client.get("/invalid-endpoint-12345").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(VfetchClientError);
+    expect((err as VfetchClientError).status).toBe(404);
+
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "Not Found" }), { status: 404 }),
+    );
     const safeRes = await client.safeGet("/invalid-endpoint-12345");
     expect(safeRes.ok).toBe(false);
     if (!safeRes.ok) {
       expect(safeRes.status).toBe(404);
       expect(safeRes.error).toBeDefined();
     }
-  }, 15000);
+  });
 
   it("should handle network errors (e.g. invalid host)", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
+
     const badClient = createClient({
       baseURL: "https://invalid-host-that-does-not-exist.local",
     });
@@ -27,7 +48,7 @@ describe("Error Handling", () => {
       expect(res.status).toBe(0);
       expect(typeof res.error).toBe("string");
     }
-  }, 15000);
+  });
 
   describe("Mocked Error Edge Cases", () => {
     let fetchMock: FetchMock;
@@ -199,11 +220,11 @@ describe("Error Normalization - payload retention", () => {
     fetchMock.mockResolvedValueOnce(new Response("x", { status: 500 }));
 
     const client = createClient({ baseURL: "https://api.test.com" });
-    const err = await client.get("/x").catch((e) => e);
+    const err: unknown = await client.get("/x").catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(Error);
     expect(err).toBeInstanceOf(VfetchClientError);
-    expect(err.name).toBe("VfetchClientError");
+    expect((err as VfetchClientError).name).toBe("VfetchClientError");
   });
 
   it("retains structured JSON payloads in data", async () => {
@@ -212,7 +233,7 @@ describe("Error Normalization - payload retention", () => {
     );
 
     const client = createClient({ baseURL: "https://api.test.com" });
-    const err = (await client.get("/x").catch((e) => e)) as VfetchClientError;
+    const err = (await client.get("/x").catch((e: unknown) => e)) as VfetchClientError;
 
     expect(err.error).toBe("Invalid");
     expect(err.data).toEqual({ message: "Invalid", code: "E1" });
@@ -222,7 +243,7 @@ describe("Error Normalization - payload retention", () => {
     fetchMock.mockResolvedValueOnce(new Response("plain boom", { status: 503 }));
 
     const client = createClient({ baseURL: "https://api.test.com" });
-    const err = (await client.get("/x").catch((e) => e)) as VfetchClientError;
+    const err = (await client.get("/x").catch((e: unknown) => e)) as VfetchClientError;
 
     expect(err.status).toBe(503);
     expect(err.data).toBe("plain boom");
@@ -234,7 +255,7 @@ describe("Error Normalization - payload retention", () => {
     );
 
     const client = createClient({ baseURL: "https://api.test.com" });
-    const err = (await client.get("/x").catch((e) => e)) as VfetchClientError;
+    const err = (await client.get("/x").catch((e: unknown) => e)) as VfetchClientError;
 
     expect(err.error).toBe("Request failed with status 400");
     expect(err.data).toEqual({ message: { nested: true } });
