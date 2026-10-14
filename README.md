@@ -52,20 +52,20 @@ const api = createClient({
   baseURL: "https://api.example.com",
 });
 
-  const users = await api.get<User[]>("/users");
-  console.log(users);
-  if (res.ok) {
-  console.log(users);
+const users = await api.get<User[]>("/users");
+console.log(users); // User[] — the payload directly
 
-    console.error(res.error);
-  }
+or 
+
+const data = await api.get<User[]>("/users");
+console.log(data.user); // User[] — the payload directly, this depends complete on your api response shape 
 ```
 
 ---
 
 ## Core Response Model
 
-The primary API returns data directly and throws on error. Use `safeGet`, `safePost`, etc. for non-throwing, discriminated union responses:
+The primary API returns data directly and throws on error. Use `safeGet`, `safePost`, `safePut`, `safePatch`, and `safeDelete` for non-throwing, discriminated union responses:
 
 ```ts
 type VfetchResponse<T> =
@@ -228,11 +228,15 @@ try {
 
 Handles:
 
-- 4xx / 5xx
-- network failures
+- 4xx / 5xx (never retried; reported once via `onError`)
+- network failures (retried per `retry` / `retryDelay`; not retried for aborts)
 - invalid JSON
 - timeouts
 - aborted requests
+
+Only network-level fetch rejections are retried. HTTP errors, JSON parse
+failures, timeouts, cancellations, and token-injection failures are never
+retried. Aborting during a retry wait rejects immediately instead of hanging.
 
 ---
 

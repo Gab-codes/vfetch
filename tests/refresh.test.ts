@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createClient } from '../src';
+import { VfetchClientError } from '../src/errors';
 import { withMockedFetch, jsonResponse, FetchMock } from './utils';
 
 describe('Token Refresh Flow', () => {
@@ -157,4 +158,53 @@ describe('Token Refresh Flow', () => {
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it('rejects on the throwing API when the refresh yields no token, normalizes on the safe API', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }));
+
+    const throwing = createClient({
+      baseURL: 'https://api.test.com',
+      onRefresh: async () => null,
+    });
+    await expect(throwing.get('/secure')).rejects.toMatchObject({ status: 401 });
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }));
+
+    const safe = createClient({
+      baseURL: 'https://api.test.com',
+      onRefresh: async () => null,
+    });
+    await expect(safe.safeGet('/secure')).resolves.toMatchObject({ ok: false, status: 401 });
+  });
+
+  it('rejects without an infinite retry loop when 401s persist after refresh', async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response('u', { status: 401 }))
+      .mockResolvedValueOnce(new Response('u', { status: 401 }));
+
+    const onRefresh = vi.fn().mockResolvedValue('tok');
+    const onAuthFailure = vi.fn();
+    const client = createClient({ baseURL: 'https://api.test.com', onRefresh, onAuthFailure });
+
+    await expect(client.get('/x')).rejects.toMatchObject({ status: 401 });
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onAuthFailure).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps request failures normalized when token retrieval itself throws', async () => {
+    const throwing = createClient({
+      baseURL: 'https://api.test.com',
+      getToken: () => { throw new Error('token store broken'); },
+    });
+    await expect(throwing.get('/x')).rejects.toBeInstanceOf(VfetchClientError);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const safe = createClient({
+      baseURL: 'https://api.test.com',
+      getToken: () => { throw new Error('token store broken'); },
+    });
+    await expect(safe.safeGet('/x')).resolves.toMatchObject({ ok: false, status: 0 });
+  });
+
 });

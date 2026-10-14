@@ -36,4 +36,29 @@ describe("Hardening - Refresh Robustness", () => {
     // The core issue to harden: onAuthFailure should only be called ONCE per refresh burst
     expect(onAuthFailure).toHaveBeenCalledTimes(1);
   });
+
+  it("shares one failed refresh across a smaller concurrent burst", async () => {
+    fetchMock.mockImplementation(async () => new Response("u", { status: 401 }));
+
+    const onRefresh = vi.fn().mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+      return null;
+    });
+    const onAuthFailure = vi.fn();
+    const client = createClient({
+      baseURL: "https://test.com",
+      onRefresh,
+      onAuthFailure,
+    });
+
+    const results = await Promise.all([
+      client.safeGet("/a"),
+      client.safeGet("/b"),
+      client.safeGet("/c"),
+    ]);
+
+    expect(results.every((r) => !r.ok)).toBe(true);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(onAuthFailure).toHaveBeenCalledTimes(1);
+  });
 });

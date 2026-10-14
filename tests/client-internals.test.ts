@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createClient } from "../src";
+import { VfetchClientError } from "../src/errors";
 import { withMockedFetch, jsonResponse, FetchMock } from "./utils";
 
 describe("Client Internals - combineAbortSignals Fallback", () => {
@@ -481,4 +482,134 @@ describe("Safe Methods - safePost, safePatch, safePut, safeDelete", () => {
       expect(res.error).toBe("Network failure");
     }
   });
+
+describe("API Contract - throwing vs safe methods", () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    fetchMock = withMockedFetch();
+  });
+
+  afterEach(() => {
+    fetchMock.mockRestore();
+  });
+
+  it.each(["get", "post", "put", "patch", "delete"] as const)(
+    "primary %s returns the payload directly on success (not a wrapper)",
+    async (method) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ hello: "world" }, { status: 201 }));
+
+      const client = createClient({ baseURL: "https://api.test.com" });
+      const result =
+        method === "get" || method === "delete"
+          ? await (client[method] as (p: string) => Promise<unknown>)("/items")
+          : await (client[method] as (p: string, b: unknown) => Promise<unknown>)("/items", {
+              a: 1,
+            });
+
+      expect(result).toEqual({ hello: "world" });
+      expect(result).not.toHaveProperty("ok");
+    },
+  );
+
+  it.each(["get", "post", "put", "patch", "delete"] as const)(
+    "primary %s rejects with VfetchClientError on HTTP errors",
+    async (method) => {
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "boom" }), { status: 422 }),
+      );
+
+      const client = createClient({ baseURL: "https://api.test.com" });
+      const call =
+        method === "get" || method === "delete"
+          ? () => (client[method] as (p: string) => Promise<unknown>)("/items")
+          : () => (client[method] as (p: string, b: unknown) => Promise<unknown>)("/items", {
+              a: 1,
+            });
+
+      await expect(call()).rejects.toBeInstanceOf(VfetchClientError);
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "boom" }), { status: 422 }),
+      );
+      await expect(call()).rejects.toMatchObject({ status: 422 });
+    },
+  );
+
+  it.each(["get", "post", "put", "patch", "delete"] as const)(
+    "primary %s rejects on network failures and malformed JSON",
+    async (method) => {
+      const client = createClient({ baseURL: "https://api.test.com" });
+      const call =
+        method === "get" || method === "delete"
+          ? () => (client[method] as (p: string) => Promise<unknown>)("/items")
+          : () => (client[method] as (p: string, b: unknown) => Promise<unknown>)("/items", {
+              a: 1,
+            });
+
+      fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      await expect(call()).rejects.toMatchObject({ status: 0 });
+
+      fetchMock.mockResolvedValueOnce(new Response("not-json{{{", { status: 200 }));
+      await expect(call()).rejects.toBeInstanceOf(VfetchClientError);
+    },
+  );
+
+  it.each(["safeGet", "safePost", "safePut", "safePatch", "safeDelete"] as const)(
+    "safe %s normalizes success and failure without rejecting",
+    async (method) => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ id: 1 }));
+
+      const client = createClient({ baseURL: "https://api.test.com" });
+      const ok =
+        method === "safeGet" || method === "safeDelete"
+          ? await (client[method] as (p: string) => Promise<{ ok: boolean; status: number }>)(
+              "/items",
+            )
+          : await (
+              client[method] as (p: string, b: unknown) => Promise<{ ok: boolean; status: number }>
+            )("/items", { a: 1 });
+
+      expect(ok).toMatchObject({ ok: true, status: 200 });
+
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "bad" }), { status: 400 }),
+      );
+      const fail =
+        method === "safeGet" || method === "safeDelete"
+          ? await (client[method] as (p: string) => Promise<{ ok: boolean; status: number }>)(
+              "/items",
+            )
+          : await (
+              client[method] as (p: string, b: unknown) => Promise<{ ok: boolean; status: number }>
+            )("/items", { a: 1 });
+
+      expect(fail.ok).toBe(false);
+      expect(fail.status).toBe(400);
+    },
+  );
+
+  it("safe methods never reject for ordinary HTTP/network failures", async () => {
+    const client = createClient({ baseURL: "https://api.test.com" });
+
+    fetchMock.mockResolvedValueOnce(new Response("nope", { status: 500 }));
+    await expect(client.safeGet("/a")).resolves.toMatchObject({ ok: false, status: 500 });
+
+    fetchMock.mockRejectedValueOnce(new Error("down"));
+    await expect(client.safeGet("/a")).resolves.toMatchObject({ ok: false, status: 0 });
+  });
+
+  it("hook errors never convert failures into successes", async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ m: "no" }), { status: 500 }));
+
+    const client = createClient({
+      baseURL: "https://api.test.com",
+      onError: () => {
+        throw new Error("hook blew up");
+      },
+    });
+
+    await expect(client.get("/x")).rejects.toBeInstanceOf(VfetchClientError);
+  });
+});
+
 });

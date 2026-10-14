@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createClient } from "../src";
+import { VfetchClientError, normalizeError } from "../src/errors";
 import { withMockedFetch, FetchMock } from "./utils";
 
 describe("Error Handling", () => {
@@ -182,4 +183,89 @@ describe("Error Handling", () => {
       expect(err.status).toBe(400);
     });
   });
+
+describe("Error Normalization - payload retention", () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    fetchMock = withMockedFetch();
+  });
+
+  afterEach(() => {
+    fetchMock.mockRestore();
+  });
+
+  it("thrown errors extend Error and pass instanceof checks", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("x", { status: 500 }));
+
+    const client = createClient({ baseURL: "https://api.test.com" });
+    const err = await client.get("/x").catch((e) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(VfetchClientError);
+    expect(err.name).toBe("VfetchClientError");
+  });
+
+  it("retains structured JSON payloads in data", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "Invalid", code: "E1" }), { status: 422 }),
+    );
+
+    const client = createClient({ baseURL: "https://api.test.com" });
+    const err = (await client.get("/x").catch((e) => e)) as VfetchClientError;
+
+    expect(err.error).toBe("Invalid");
+    expect(err.data).toEqual({ message: "Invalid", code: "E1" });
+  });
+
+  it("retains raw text for plain-text error bodies", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("plain boom", { status: 503 }));
+
+    const client = createClient({ baseURL: "https://api.test.com" });
+    const err = (await client.get("/x").catch((e) => e)) as VfetchClientError;
+
+    expect(err.status).toBe(503);
+    expect(err.data).toBe("plain boom");
+  });
+
+  it("falls back gracefully for non-string message fields while keeping the payload", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: { nested: true } }), { status: 400 }),
+    );
+
+    const client = createClient({ baseURL: "https://api.test.com" });
+    const err = (await client.get("/x").catch((e) => e)) as VfetchClientError;
+
+    expect(err.error).toBe("Request failed with status 400");
+    expect(err.data).toEqual({ message: { nested: true } });
+  });
+
+  it("does not rewrap existing VfetchClientError instances", async () => {
+    const original = new VfetchClientError("same", 418, "same", { a: 1 });
+
+    await expect(normalizeError(original)).resolves.toBe(original);
+  });
+
+  it("emits onError exactly once per HTTP failure", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("bad", { status: 500 }));
+
+    const onError = vi.fn();
+    const client = createClient({ baseURL: "https://api.test.com", onError });
+
+    await expect(client.get("/x")).rejects.toBeInstanceOf(VfetchClientError);
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
+  it("safe methods preserve HTTP error detail", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "detail here" }), { status: 400 }),
+    );
+
+    const client = createClient({ baseURL: "https://api.test.com" });
+    const res = await client.safeGet("/x");
+
+    expect(res).toMatchObject({ ok: false, status: 400, error: "detail here" });
+  });
+});
+
 });

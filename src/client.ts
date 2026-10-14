@@ -1,6 +1,6 @@
 import { normalizeError, VfetchClientError } from "./errors";
 import { Interceptor } from "./interceptors";
-import { RequestOptions, VfetchConfig, VfetchResponse } from "./types";
+import { RequestOptions, VfetchConfig, VfetchError, VfetchResponse } from "./types";
 
 /** Default number of retry attempts for network failures. */
 const DEFAULT_RETRY_COUNT = 0;
@@ -20,11 +20,19 @@ interface AbortSignalConstructorWithAny {
  * Combines multiple AbortSignals so that aborting any one of them
  * aborts the combined signal. Uses AbortSignal.any() when available,
  * falls back to manual event listener wiring.
+ *
+ * Returns the combined signal plus a cleanup function that removes any
+ * listeners installed by the manual fallback (no-op when AbortSignal.any
+ * was used). Callers should invoke cleanup once the request settles to
+ * avoid leaking listeners across retries.
  */
-function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
+function combineAbortSignals(signals: AbortSignal[]): {
+  signal: AbortSignal;
+  cleanup: () => void;
+} {
   const ctor = AbortSignal as unknown as AbortSignalConstructorWithAny;
   if ("any" in AbortSignal && typeof ctor.any === "function") {
-    return ctor.any(signals);
+    return { signal: ctor.any(signals), cleanup: () => {} };
   }
 
   // Manual fallback
@@ -33,13 +41,17 @@ function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
   for (const signal of signals) {
     if (signal.aborted) {
       controller.abort(signal.reason);
-      return controller.signal;
+      return { signal: controller.signal, cleanup: () => {} };
     }
   }
 
   const onAbort = () => {
     const abortedSignal = signals.find((s) => s.aborted);
     controller.abort(abortedSignal?.reason);
+    cleanup();
+  };
+
+  const cleanup = () => {
     for (const signal of signals) {
       signal.removeEventListener("abort", onAbort);
     }
@@ -49,7 +61,7 @@ function combineAbortSignals(signals: AbortSignal[]): AbortSignal {
     signal.addEventListener("abort", onAbort);
   }
 
-  return controller.signal;
+  return { signal: controller.signal, cleanup };
 }
 
 /**
@@ -98,7 +110,18 @@ export class VfetchClient {
       const url = this.buildUrl(path, params);
       const headers = this.buildHeaders(requestHeaders);
 
-      await this.interceptor.beforeRequest(headers, this.config);
+      try {
+        await this.interceptor.beforeRequest(headers, this.config);
+      } catch (error) {
+        // Token-injection failures are configuration errors, never retried.
+        const urlString = url.toString();
+        const normalized =
+          error instanceof VfetchClientError
+            ? error
+            : await normalizeError(error);
+        this.emitError(urlString, normalized);
+        throw normalized;
+      }
 
       // Setup AbortController for timeout
       const timeoutController = timeout ? new AbortController() : null;
@@ -110,7 +133,10 @@ export class VfetchClient {
         }, timeout);
       }
 
-      const finalSignal = this.resolveSignal(userSignal, timeoutController);
+      const { signal: finalSignal, cleanup: signalCleanup } = this.resolveSignal(
+        userSignal,
+        timeoutController,
+      );
       const credentials = options.credentials ?? this.config.credentials ?? "same-origin";
 
       const fetchOptions: RequestInit = {
@@ -125,6 +151,11 @@ export class VfetchClient {
 
       // Lifecycle Hook: onRequest
       this.safeInvokeHook(() => this.config.onRequest?.(urlString, fetchOptions));
+
+      const cleanupAttempt = () => {
+        this.clearScheduledTimeout(timeoutId);
+        signalCleanup();
+      };
 
       try {
         const retryFn = async (newToken?: string) => {
@@ -142,14 +173,14 @@ export class VfetchClient {
           retryFn,
         );
 
-        this.clearScheduledTimeout(timeoutId);
+        cleanupAttempt();
 
         const durationMs = Date.now() - startTime;
 
         if (!response.ok) {
-          const errorResponse = await normalizeError(response);
-          this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: errorResponse.error as string | Record<string, unknown>, status: errorResponse.status }));
-          throw errorResponse;
+          // Thrown VfetchClientError is handled (emitted once) by the
+          // catch block below — never retried.
+          throw await normalizeError(response);
         }
 
         let data: T;
@@ -161,12 +192,10 @@ export class VfetchClient {
             data = text ? JSON.parse(text) : ({} as T);
           }
         } catch {
-          const parseError = new VfetchClientError(
+          throw new VfetchClientError(
             `Failed to parse JSON response from ${method} ${path}`,
             response.status
           );
-          this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: parseError.error as string | Record<string, unknown>, status: parseError.status }));
-          throw parseError;
         }
 
         // Lifecycle Hook: onResponse
@@ -175,7 +204,7 @@ export class VfetchClient {
         return { data, status: response.status };
 
       } catch (error) {
-        this.clearScheduledTimeout(timeoutId);
+        cleanupAttempt();
 
         // Check if error is due to AbortSignal (timeout or manual cancellation)
         if (error instanceof Error && error.name === "AbortError") {
@@ -184,21 +213,42 @@ export class VfetchClient {
             isTimeout ? "Request timed out" : "Request was cancelled",
             0
           );
-          this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: abortError.error as string | Record<string, unknown>, status: abortError.status }));
+          this.emitError(urlString, abortError);
           throw abortError;
         }
 
-        // Network failure — potentially retry
+        // HTTP errors, parse failures and token-injection failures are
+        // deterministic — report once, never retry.
+        if (error instanceof VfetchClientError) {
+          this.emitError(urlString, error);
+          throw error;
+        }
+
+        // Network failure — potentially retry (only genuine fetch rejections
+        // reach this point).
         if (attempt < maxRetries) {
           attempt++;
           if (retryDelay > 0) {
-            await this.delay(retryDelay);
+            try {
+              await this.delay(retryDelay, finalSignal);
+            } catch (delayError) {
+              if (delayError instanceof Error && delayError.name === "AbortError") {
+                const isTimeout = timeoutController?.signal.aborted === true;
+                const abortError = new VfetchClientError(
+                  isTimeout ? "Request timed out" : "Request was cancelled",
+                  0
+                );
+                this.emitError(urlString, abortError);
+                throw abortError;
+              }
+              throw delayError;
+            }
           }
           return executeRequest();
         }
 
         const normalizedError = await normalizeError(error);
-        this.safeInvokeHook(() => this.config.onError?.(urlString, { ok: false, error: normalizedError.error as string | Record<string, unknown>, status: normalizedError.status }));
+        this.emitError(urlString, normalizedError);
         throw normalizedError;
       }
     };
@@ -242,11 +292,11 @@ export class VfetchClient {
   private resolveSignal(
     userSignal?: AbortSignal,
     timeoutController?: AbortController | null,
-  ): AbortSignal | undefined {
+  ): { signal: AbortSignal | undefined; cleanup: () => void } {
     if (userSignal && timeoutController) {
       return combineAbortSignals([userSignal, timeoutController.signal]);
     }
-    return userSignal ?? timeoutController?.signal;
+    return { signal: userSignal ?? timeoutController?.signal, cleanup: () => {} };
   }
 
   /** Clears a scheduled timeout if it exists. */
@@ -256,9 +306,45 @@ export class VfetchClient {
     }
   }
 
-  /** Returns a promise that resolves after the given number of milliseconds. */
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  /**
+   * Returns a promise that resolves after the given number of milliseconds.
+   * Rejects early with an AbortError when `signal` aborts first, so a
+   * timeout/cancellation can never leave a retry wait hanging indefinitely.
+   */
+  private delay(ms: number, signal?: AbortSignal): Promise<void> {
+    if (ms <= 0) return Promise.resolve();
+    if (signal?.aborted) {
+      const err = new Error("The operation was aborted");
+      err.name = "AbortError";
+      return Promise.reject(err);
+    }
+    if (!signal) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        const err = new Error("The operation was aborted");
+        err.name = "AbortError";
+        reject(err);
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  /** Emits onError without letting hook failures break the request lifecycle. */
+  private emitError(url: string, error: VfetchClientError): void {
+    this.safeInvokeHook(() =>
+      this.config.onError?.(url, {
+        ok: false,
+        error: error.error as string | Record<string, unknown>,
+        status: error.status,
+      }),
+    );
   }
 
   /** Safely invokes a lifecycle hook. Hook errors are silently ignored. */
@@ -323,7 +409,11 @@ export class VfetchClient {
       return { ok: true, data, status };
     } catch (error) {
       if (error instanceof VfetchClientError) {
-        return { ok: false, error: error.error as string, status: error.status };
+        return {
+          ok: false,
+          error: error.error as VfetchError['error'],
+          status: error.status,
+        };
       }
       return { ok: false, error: "An unknown error occurred", status: 0 };
     }
@@ -338,7 +428,11 @@ export class VfetchClient {
       return { ok: true, data, status };
     } catch (error) {
       if (error instanceof VfetchClientError) {
-        return { ok: false, error: error.error as string, status: error.status };
+        return {
+          ok: false,
+          error: error.error as VfetchError['error'],
+          status: error.status,
+        };
       }
       return { ok: false, error: "An unknown error occurred", status: 0 };
     }
@@ -353,7 +447,11 @@ export class VfetchClient {
       return { ok: true, data, status };
     } catch (error) {
       if (error instanceof VfetchClientError) {
-        return { ok: false, error: error.error as string, status: error.status };
+        return {
+          ok: false,
+          error: error.error as VfetchError['error'],
+          status: error.status,
+        };
       }
       return { ok: false, error: "An unknown error occurred", status: 0 };
     }
@@ -368,7 +466,11 @@ export class VfetchClient {
       return { ok: true, data, status };
     } catch (error) {
       if (error instanceof VfetchClientError) {
-        return { ok: false, error: error.error as string, status: error.status };
+        return {
+          ok: false,
+          error: error.error as VfetchError['error'],
+          status: error.status,
+        };
       }
       return { ok: false, error: "An unknown error occurred", status: 0 };
     }
@@ -383,7 +485,11 @@ export class VfetchClient {
       return { ok: true, data, status };
     } catch (error) {
       if (error instanceof VfetchClientError) {
-        return { ok: false, error: error.error as string, status: error.status };
+        return {
+          ok: false,
+          error: error.error as VfetchError['error'],
+          status: error.status,
+        };
       }
       return { ok: false, error: "An unknown error occurred", status: 0 };
     }
